@@ -1,6 +1,8 @@
-# OS
+# OS / editor
 .DS_Store
 Thumbs.db
+*.swp
+*.swo
 
 # Python / Jupyter / R
 __pycache__/
@@ -12,20 +14,24 @@ __pycache__/
 .RData
 .Rproj.user/
 
-# Conda artifacts
+# Conda / Pip artifacts
 *.conda-env
 *.lock.yml
 
-# Central results (keep folder markers)
-results/*
-!results/**/.gitkeep
-
-# Data (keep refs/, ignore everything else)
+# Data + Results (keep only .gitkeep markers)
 data/*
 !data/.gitkeep
 !data/refs/**
 
-# Caches / logs
+results/*
+!results/**/.gitkeep
+
+# Logs / SLURM
+logs/*
+*.out
+*.err
+
+# Caches
 *.log
 .cache/
 .mypy_cache/

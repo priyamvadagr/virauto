@@ -14,12 +14,18 @@ data/refs/ # shared reference files (genomes, HLA lists, databases)
 src/virauto/ # reusable helper code  
 tests/ # smoke/unit tests  
 docs/ # notes, documentation  
+analyses/ # per-analysis modules (e.g. ld_expansion, netmhcpan, blast)  
+results/ # centralized outputs (per module subfolders)  
+data/refs/ # shared reference files (genomes, HLA lists, databases)  
+src/virauto/ # reusable helper code  
+tests/ # smoke/unit tests  
+docs/ # notes, documentation  
 
-Each analysis module follows a standard structure:
+Each analysis module follows a standard structure: 
 
-analyses/<module>/  
-config/ # YAML/TSV configs, manifests  
-scripts/ # Python/R/Bash/SLURM entrypoints  
-notebooks/ # Jupyter / RMarkdown exploration  
-logs/ # runtime logs  
-slurm/ # HPC job scripts  
+analyses/<module>/    
+config/ # YAML/TSV configs, manifests    
+scripts/ # Python/R/Bash/SLURM entrypoints    
+notebooks/ # Jupyter / RMarkdown exploration     
+logs/ # runtime logs    
+slurm/ # HPC job scripts    
