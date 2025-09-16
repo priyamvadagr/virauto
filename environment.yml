@@ -1,0 +1,28 @@
+name: virauto
+channels:
+  - conda-forge
+dependencies:
+  # Core
+  - python=3.10
+  - pip
+  - numpy
+  - pandas
+  - scipy
+  - scikit-learn
+  - matplotlib
+  - seaborn
+  - jupyterlab
+  - statsmodels
+  - biopython
+  - networkx
+  - pyyaml
+  - pyarrow
+  - plotly
+
+  # Hail stack (Pan-UKBB LD)
+  - openjdk=11
+  - pip:
+      - hail==0.2.135
+      - pyspark==3.5.1
+      - boto3
+
