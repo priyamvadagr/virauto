@@ -28,8 +28,13 @@ results/*
 
 # Logs / SLURM
 logs/*
+**/logs/
 *.out
 *.err
+
+# TMP files 
+**/tmp/
+tmp/*
 
 # Caches
 *.log

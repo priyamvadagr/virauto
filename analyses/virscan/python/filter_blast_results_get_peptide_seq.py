@@ -1,0 +1,67 @@
+#!/usr/bin/env python3
+import pandas as pd
+from Bio import SeqIO
+from Bio.SeqRecord import SeqRecord
+from Bio.Seq import Seq
+# ====================================================
+# Config
+# ====================================================
+blast_file = "/ix/djishnu/Priyamvada/virauto/data/epitopes/virscan/all_peptides_blast_out.tsv"
+out_df = '/ix/djishnu/Priyamvada/virauto/data/epitopes/virscan/similarity_filtered_blast_out.csv'
+human_fasta = "/ix/djishnu/Priyamvada/virauto/data/refs/uniprot/uniprot_human_all.fasta"
+out_fasta = "/ix/djishnu/Priyamvada/virauto/data/epitopes/virscan/filetered_human_protein_seqs.fasta"
+
+# ====================================================
+# Load blast results and filter to 75-95% similarity
+# ====================================================
+cols = ["qseqid","sseqid","pident","length","mismatch","gapopen",
+              "qlen","slen","qstart","qend","sstart","send","evalue","bitscore"]
+
+df = pd.read_csv(blast_file, sep="\t", names=cols)
+
+# Compute coverage-normalized similarity
+df["similarity"] = df["pident"] * (df["length"] / df["qlen"])
+
+hits = df[(df["similarity"] >= 75) & (df["similarity"] <= 95)]
+print(hits.head())
+
+# Save to file
+hits.to_csv(out_df, index=False)
+print(f"✅ Filtered BLAST results saved to {out_df}")
+# ====================================================
+# Load human proteome into dictionary {UniProt ID → SeqRecord}
+# ====================================================
+seq_dict = {}
+for rec in SeqIO.parse(human_fasta, "fasta"):
+    # UniProt FASTA headers are like >sp|P12345|PROT_HUMAN
+    acc = rec.id.split("|")[1] if "|" in rec.id else rec.id
+    seq_dict[acc] = rec
+
+# ====================================================
+# Extract only the aligned subsequence
+# ====================================================
+records = []
+for _, row in hits.iterrows():
+    pep_id = row["qseqid"].split("|")[0]   # VirScan peptide ID
+    sseqid = row["sseqid"].split("|")[1] if "|" in row["sseqid"] else row["sseqid"]
+
+    if sseqid not in seq_dict:
+        print(f"⚠️ {sseqid} not found in FASTA")
+        continue
+
+    full_seq = seq_dict[sseqid].seq
+    start, end = int(row["sstart"]), int(row["send"])
+
+    if start <= end:
+        subseq = full_seq[start-1:end]   # 1-based inclusive indexing
+    else:
+        subseq = full_seq[end-1:start].reverse_complement()  # rarely for proteins
+
+    header = f"{pep_id}|HUMAN_{sseqid}|{start}-{end}|sim={row['similarity']:.2f}"
+    records.append(SeqRecord(Seq(str(subseq)), id=header, description=""))
+
+# ====================================================
+# Write FASTA
+# ====================================================
+SeqIO.write(records, out_fasta, "fasta")
+print(f"✅ Extracted {len(records)} aligned subsequences to {out_fasta}")
