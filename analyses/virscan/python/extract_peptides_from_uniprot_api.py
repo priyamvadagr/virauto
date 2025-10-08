@@ -1,7 +1,49 @@
 #!/usr/bin/env python3
 """
-Map UniProt accessions via API, extract peptide sequences from full proteins,
-and write to FASTA for BLAST or alignment.
+======================================================================
+Script: extract_peptides_from_uniprot_api.py
+Author: Priyamvada Guha Roy
+Description:
+    This script automates the extraction of peptide sequences corresponding 
+    to VirScan peptide metadata by querying the UniProt REST API.
+
+    It first resolves outdated or secondary UniProt accessions to their 
+    current primary identifiers using the UniProt ID mapping service. 
+    Then, for each peptide (defined by start–end positions on the parent 
+    protein), it fetches the full protein sequence via API, extracts the 
+    subsequence, and writes all peptides to a FASTA file for downstream 
+    BLAST or alignment analyses.
+
+Workflow:
+    1. Load the peptide metadata table containing columns: 
+       [pep_id, UniProt_acc, start, end].
+    2. Map UniProt accessions to their current identifiers via API.
+    3. Fetch the corresponding full protein sequences.
+    4. Extract peptide subsequences (start–end) from each protein.
+    5. Write peptide sequences to a FASTA file.
+    6. Log any failed retrievals or boundary errors to a CSV file.
+
+Inputs:
+    - virscan_csv: CSV containing peptide metadata (pep_id, UniProt_acc, start, end)
+
+Outputs:
+    - out_fasta: FASTA file with extracted peptide sequences
+    - uniprot_id_mapping.csv: mapping of old → new UniProt accessions
+    - peptide_sequence_failures.csv: log of peptides with missing or invalid sequences
+
+Dependencies:
+    - pandas
+    - requests
+    - biopython
+
+Notes:
+    - Uses the UniProt REST API (https://rest.uniprot.org)
+    - Includes built-in polling for asynchronous ID mapping jobs
+    - Skips peptides whose range exceeds the full sequence length
+
+Usage:
+    python extract_peptides_from_uniprot_api.py
+======================================================================
 """
 
 import pandas as pd

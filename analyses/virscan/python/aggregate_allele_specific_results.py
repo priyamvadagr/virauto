@@ -1,14 +1,72 @@
+#!/usr/bin/env python3
+"""
+======================================================================
+Script: merge_netmhcpan_predictions.py
+Author: Priyamvada Guha Roy
+Description:
+    This script merges NetMHCpan prediction output files with their 
+    corresponding paired viral–human FASTA chunks to produce a combined 
+    table of MHC binding predictions for non-identical viral–human peptide 
+    pairs. The script is modular, allowing the user to specify the MHC 
+    type (e.g., type1), class (e.g., A, B, or C), and peptide length 
+    (k-mer size) via command-line arguments.
+
+Enhancement:
+    If the output file already exists, previously processed files are 
+    detected via `source_file_human`, and only new NetMHCpan results 
+    not already included in the output are processed and appended.
+
+Workflow:
+    1. Load all NetMHCpan .xls prediction files from the specified directory.
+    2. Match each .xls file with its corresponding FASTA chunk (by chunk number).
+    3. Read FASTA headers to extract peptide metadata.
+    4. Merge FASTA metadata with NetMHCpan predictions (1:1 order).
+    5. Split into viral and human subsets, merge on pair ID and allele.
+    6. Remove duplicate and identical peptide pairs.
+    7. Append only new results if output file exists.
+
+CLI Arguments:
+    --type   : MHC binding type (e.g., type1, type2)
+    --class  : MHC class letter (e.g., A, B, C)
+    --kmer   : Peptide length (e.g., 8, 9, 10)
+
+Example Usage:
+    python merge_netmhcpan_predictions.py --type type1 --class B --kmer 9
+======================================================================
+"""
+
+# ====================================================
+# IMPORTS & CLI ARGUMENTS
+# ====================================================
 import pandas as pd
 import glob
 import os
 import re
+import argparse
+
+# ----------------------------------------------------
+# Parse command-line arguments
+# ----------------------------------------------------
+parser = argparse.ArgumentParser(description="Merge NetMHCpan predictions with paired FASTA chunks.")
+parser.add_argument("--type", required=True, help="MHC type (e.g., type1, type2)")
+parser.add_argument("--class", required=True, dest="class_", help="MHC class letter (e.g., A, B, C)")
+parser.add_argument("--kmer", required=True, type=int, help="Peptide length (e.g., 8, 9, 10)")
+args = parser.parse_args()
+
+type_ = args.type
+class_ = args.class_
+k_mer = args.kmer
 
 # ====================================================
-# Input/output paths
+# USER-CONFIGURED PATHS (auto-generated)
 # ====================================================
-netmhc_dir = "/ix/djishnu/Priyamvada/virauto/results/netmhcpan/virscan/9_mers/type1/type1_B_chunks"
-fasta_dir = "/ix/djishnu/Priyamvada/virauto/data/epitopes/virscan/paired_k_mers/9_mers/chunks"
-out_dir = "/ix/djishnu/Priyamvada/virauto/results/netmhcpan/virscan/9_mers/type1/type1_concat"
+base_results = "/ix/djishnu/Priyamvada/virauto/results/netmhcpan/virscan"
+base_data = "/ix/djishnu/Priyamvada/virauto/data/epitopes/virscan"
+
+netmhc_dir = f"{base_results}/{k_mer}_mers/{type_}/{type_}_{class_}_chunks"
+fasta_dir = f"{base_data}/paired_k_mers/{k_mer}_mers/chunks"
+out_dir = f"{base_results}/{k_mer}_mers/{type_}/{type_}_processed"
+out_file = os.path.join(out_dir, f"{type_}_{class_}_all_predictions_processed.txt")
 
 # ====================================================
 # Helper: extract chunk number from filename
@@ -22,12 +80,13 @@ def extract_chunk_number(filename):
 # Helper: read FASTA headers in order
 # ====================================================
 def read_fasta_headers(fasta_file):
+    """Read FASTA headers into a DataFrame preserving order."""
     records = []
     with open(fasta_file) as fh:
         for line in fh:
             line = line.strip()
             if line.startswith(">"):
-                full_id = line[1:]  # remove ">"
+                full_id = line[1:]
                 parts = full_id.split("_")
                 if len(parts) >= 4:
                     typ = parts[0]                    # VIRAL or HUMAN
@@ -44,64 +103,74 @@ def read_fasta_headers(fasta_file):
     return pd.DataFrame(records)
 
 # ====================================================
+# Load previously processed files if output exists
+# ====================================================
+processed_files = set()
+if os.path.exists(out_file):
+    print(f"🔄 Existing output found: {out_file}")
+    try:
+        prev_df = pd.read_csv(out_file, sep="\t", usecols=["source_file_human"])
+        processed_files = set(prev_df["source_file_human"].unique())
+        print(f"Found {len(processed_files)} previously processed files.")
+    except Exception as e:
+        print(f"⚠️ Could not read existing output properly: {e}")
+else:
+    print("No previous output found — starting fresh.")
+
+# ====================================================
 # Process each .xls file
 # ====================================================
 xls_files = sorted(glob.glob(f"{netmhc_dir}/*.xls"))
-print(f"Found {len(xls_files)} NetMHCpan .xls files")
+print(f"\nFound {len(xls_files)} NetMHCpan .xls files total")
 
 all_processed = []
 
 for xls_file in xls_files:
     xls_basename = os.path.basename(xls_file)
+
+    # Skip files already processed
+    if xls_basename in processed_files:
+        print(f"⏩ Skipping already processed file: {xls_basename}")
+        continue
+
     print(f"\n{'='*60}")
     print(f"Processing: {xls_basename}")
     print(f"{'='*60}")
     
-    # Extract chunk number from filename
+    # Extract chunk number
     chunk_num = extract_chunk_number(xls_file)
     if not chunk_num:
         print(f"Warning: Could not extract chunk number from {xls_basename}")
         continue
     
-    print(f"Chunk number: {chunk_num}")
-    
-    # Find corresponding FASTA file
     fasta_path = os.path.join(fasta_dir, f"matched_pairs_chunk_{chunk_num}.fasta")
-    
     if not os.path.exists(fasta_path):
         print(f"Warning: FASTA file not found: {fasta_path}")
         continue
     
-    # Read FASTA metadata (ordered)
-    print(f"Reading FASTA: matched_pairs_chunk_{chunk_num}.fasta")
+    # Read FASTA metadata
     fasta_info = read_fasta_headers(fasta_path)
     print(f"  Loaded {len(fasta_info):,} FASTA headers")
     
-    # Extract allele from first line of .xls file
+    # Extract allele
     with open(xls_file) as fh:
         first_line = fh.readline().strip()
         allele = first_line.split()[0] if first_line else "Unknown"
-    
     print(f"  Allele: {allele}")
     
     # Read NetMHCpan predictions
     df = pd.read_csv(xls_file, sep="\t", skiprows=1)
     print(f"  Loaded {len(df):,} predictions")
     
-    # Check if row counts match
     if len(df) != len(fasta_info):
-        print(f"  WARNING: Row count mismatch!")
-        print(f"    NetMHCpan predictions: {len(df):,}")
-        print(f"    FASTA entries: {len(fasta_info):,}")
+        print(f"  ⚠️ Row count mismatch — skipping {xls_basename}")
         continue
     
-    # Attach FASTA metadata (1:1 ordered match) - only full peptide ID
+    # Attach metadata
     df["Allele"] = allele
     df["Peptide_ID_full"] = fasta_info["full_id"].values
     df["chunk"] = chunk_num
     df["source_file"] = xls_basename
-    
-    # Parse type and pair_id from full_id for merging purposes
     df["type"] = fasta_info["type"].values
     df["pair_id"] = fasta_info["pair_id"].values
     
@@ -109,10 +178,6 @@ for xls_file in xls_files:
     viral = df[df["type"] == "VIRAL"].copy()
     human = df[df["type"] == "HUMAN"].copy()
     
-    print(f"  Viral peptides: {len(viral):,}")
-    print(f"  Human peptides: {len(human):,}")
-    
-    # Merge viral–human pairs
     merged = pd.merge(
         viral,
         human,
@@ -122,35 +187,28 @@ for xls_file in xls_files:
     )
     print(f"  Merged {len(merged):,} viral–human pairs")
     
-    # Drop rows that are fully identical (all columns match)
+    # Filter duplicates and identicals
     merged_diff = merged.drop_duplicates()
-    print(f"  After removing duplicates: {len(merged_diff):,}")
-    
-    # Additionally filter out pairs with identical peptide sequences
     merged_diff = merged_diff[merged_diff["Peptide_viral"] != merged_diff["Peptide_human"]].copy()
-    print(f"  Non-identical peptide pairs: {len(merged_diff):,}")
-    
-    # Drop the temporary type and pair_id columns from viral/human sides (keep the main ones)
-    cols_to_drop = [col for col in merged_diff.columns if col in ['type_viral', 'type_human', 'pair_id']]
-    merged_diff = merged_diff.drop(columns=cols_to_drop, errors='ignore')
     
     all_processed.append(merged_diff)
 
 # ====================================================
-# Combine all files and save final output
+# Combine and save
 # ====================================================
-print(f"\n{'='*60}")
-print("Combining all files...")
-print(f"{'='*60}")
-
 if not all_processed:
-    print("ERROR: No files were successfully processed!")
+    print("No new files to process.")
 else:
-    final_df = pd.concat(all_processed, ignore_index=True)
-    print(f"Total non-identical pairs: {len(final_df):,}")
-    
+    new_df = pd.concat(all_processed, ignore_index=True)
+    print(f"✅ Total new non-identical pairs: {len(new_df):,}")
+
     os.makedirs(out_dir, exist_ok=True)
-    out_file = os.path.join(out_dir, "type1_B_all_predictions_processed.txt")
-    final_df.to_csv(out_file, sep="\t", index=False)
-    print(f"Saved processed table → {out_file}")
-    
+    if os.path.exists(out_file):
+        print(f"Appending new data to existing file → {out_file}")
+        with open(out_file, "a") as f:
+            new_df.to_csv(f, sep="\t", index=False, header=False)
+    else:
+        print(f"Creating new output file → {out_file}")
+        new_df.to_csv(out_file, sep="\t", index=False)
+
+print("\n✅ Script complete.")

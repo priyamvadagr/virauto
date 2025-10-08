@@ -4,7 +4,6 @@ import pandas as pd
 # Load the full VirScan dataset (large file)
 df = pd.read_csv("/ix/djishnu/Priyamvada/virauto/data/epitopes/Virscan_dataset.csv")
 
-
 # Extract unique peptide identifiers with mapping info
 peptide_metadata = df[['pep_id', 'UniProt_acc', 'start', 'end']].drop_duplicates()
 

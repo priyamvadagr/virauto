@@ -1,8 +1,47 @@
+#!/usr/bin/env python3
+"""
+======================================================================
+Script: generate_paired_viral_human_fasta_chunks.py
+Author: Priyamvada Guha Roy
+Description:
+    This script converts a CSV file containing paired viral–human k-mer 
+    peptide pairs into FASTA files formatted for downstream alignment or BLAST 
+    analyses. Each viral peptide is immediately followed by its matched 
+    human counterpart, preserving pairing order for alignment pipelines.
+
+Workflow:
+    1. Load a CSV containing columns:
+       [pep_id, offset, viral_protein, human_protein, viral_kmer, human_kmer].
+    2. Create FASTA records for each viral and human k-mer.
+    3. Arrange records in alternating viral–human order.
+    4. Write sequences in batches (chunks) of 100 records per file.
+
+Inputs:
+    - paired_viral_human_kmers.csv: CSV of matched viral–human k-mer pairs.
+
+Outputs:
+    - matched_pairs_chunk_*.fasta: Chunked FASTA files containing 
+      alternating viral and human sequences.
+
+Dependencies:
+    - pandas
+    - biopython
+
+Notes:
+    - Each FASTA record ID encodes the type (VIRAL/HUMAN), peptide ID, 
+      offset, and corresponding UniProt ID.
+    - The chunk size (default = 100) can be adjusted for batch size needs.
+
+Usage:
+    python generate_paired_viral_human_fasta_chunks.py
+======================================================================
+"""
 import pandas as pd
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 from Bio import SeqIO
 
+# Load paired viral-human k-mer data
 df = pd.read_csv("/ix/djishnu/Priyamvada/virauto/data/epitopes/virscan/paired_k_mers/9_mers/paired_viral_human_9mers.csv")
 
 # Create list to hold alternating viral-human pairs

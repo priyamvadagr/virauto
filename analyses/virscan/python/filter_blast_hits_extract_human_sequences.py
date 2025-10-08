@@ -1,4 +1,40 @@
 #!/usr/bin/env python3
+"""
+======================================================================
+Script: filter_blast_hits_extract_human_sequences.py
+Author: Priyamvada Guha Roy
+Description:
+    This script filters BLAST alignment results between VirScan peptides 
+    and the human proteome to identify human protein segments with 
+    75–95% sequence similarity to viral peptides. It then extracts the 
+    corresponding subsequences from the UniProt human proteome FASTA file 
+    and writes them to a new FASTA file for downstream analyses.
+
+Workflow:
+    1. Load BLAST output (tab-separated) and assign column names.
+    2. Compute coverage-adjusted similarity = pident × (alignment_length / query_length).
+    3. Filter hits with 75–95% normalized similarity.
+    4. Save filtered hits to CSV.
+    5. Parse the human proteome FASTA into a dictionary {UniProt ID → SeqRecord}.
+    6. Extract aligned subsequences (start–end) for matching hits.
+    7. Write extracted sequences to a new FASTA file.
+
+Inputs:
+    - blast_file: VirScan peptide vs human proteome BLAST output (.tsv)
+    - human_fasta: UniProt human proteome FASTA file
+
+Outputs:
+    - out_df: Filtered BLAST hits (CSV)
+    - out_fasta: Extracted human protein subsequences (FASTA)
+
+Dependencies:
+    pandas, biopython
+
+Usage:
+    python filter_blast_hits_extract_human_sequences.py
+======================================================================
+"""
+
 import pandas as pd
 from Bio import SeqIO
 from Bio.SeqRecord import SeqRecord

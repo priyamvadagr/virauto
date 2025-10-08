@@ -23,16 +23,18 @@ mkdir -p "$OUTDIR"
 ############################################################
 # 2️⃣  TEMP DIRECTORY HANDLING
 ############################################################
-if [ -d "$SLURM_TMPDIR" ]; then
-    TMPDIR="$SLURM_TMPDIR"
-elif [ -d "/scratch" ] && [ -w "/scratch" ]; then
-    TMPDIR="/scratch/$USER/netmhcpan_${SLURM_ARRAY_TASK_ID}"
+if [ -d "$SLURM_SCRATCH" ]; then
+    TMPDIR="$SLURM_SCRATCH"
+    printf "[INFO] Using SLURM_SCRATCH: $TMPDIR\n"
+elif [ -d "$SLURM_SCRATCH" ] && [ -w "$SLURM_SCRATCH" ]; then
+    TMPDIR="$SLURM_SCRATCH/netmhcpan_${SLURM_ARRAY_TASK_ID}"
     mkdir -p "$TMPDIR"
 else
-    TMPDIR="/ix/djishnu/Priyamvada/virauto/tmp/netmhcpan_${SLURM_ARRAY_TASK_ID}"
+    TMPDIR="/ix/djishnu/Priyamvada/virauto/tmp/netmhcpan_${SLURM_JOB_ID}"
     mkdir -p "$TMPDIR"
 fi
 export TMPDIR
+
 
 echo "[INFO] Job $SLURM_ARRAY_TASK_ID started on $(hostname) at $(date)"
 echo "[INFO] Peptide file: $PEP_FILE"

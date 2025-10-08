@@ -13,7 +13,10 @@
 
 # --- Input files ---
 ALLELE_FILE=/ix/djishnu/Priyamvada/virauto/data/HLA_alleles/Type1_random_sampling/HLA_A_random200.txt
-CHUNK_LIST=/ix/djishnu/Priyamvada/virauto/analyses/misc/chunk_lists/chunk_batch_1.txt
+CHUNK_LIST=/ix/djishnu/Priyamvada/virauto/analyses/misc/chunk_lists/
+# --- Output directory ---
+OUTDIR=/ix/djishnu/Priyamvada/virauto/results/netmhcpan/virscan/9_mers/type1/type1_A_chunks
+mkdir -p "$OUTDIR"
 
 # Get the specific peptide file for this array task
 PEP_FILE=$(sed -n "${SLURM_ARRAY_TASK_ID}p" "$CHUNK_LIST")
@@ -29,20 +32,19 @@ if [ ! -f "$PEP_FILE" ]; then
     exit 1
 fi
 
-# --- Output directory ---
-OUTDIR=/ix/djishnu/Priyamvada/virauto/results/netmhcpan/virscan/9_mers/type1/type1_C_chunks
-mkdir -p "$OUTDIR"
+
 
 ############################################################
-# TEMP DIRECTORY HANDLING
+# 2️⃣  TEMP DIRECTORY HANDLING
 ############################################################
-if [ -d "$SLURM_TMPDIR" ]; then
-    TMPDIR="$SLURM_TMPDIR"
-elif [ -d "/scratch" ] && [ -w "/scratch" ]; then
-    TMPDIR="/scratch/$USER/netmhcpan_${SLURM_ARRAY_TASK_ID}"
+if [ -d "$SLURM_SCRATCH" ]; then
+    TMPDIR="$SLURM_SCRATCH"
+    printf "[INFO] Using SLURM_SCRATCH: $TMPDIR\n"
+elif [ -d "$SLURM_SCRATCH" ] && [ -w "$SLURM_SCRATCH" ]; then
+    TMPDIR="$SLURM_SCRATCH/netmhcpan_${SLURM_ARRAY_TASK_ID}"
     mkdir -p "$TMPDIR"
 else
-    TMPDIR="/ix/djishnu/Priyamvada/virauto/tmp/netmhcpan_${SLURM_ARRAY_TASK_ID}"
+    TMPDIR="/ix/djishnu/Priyamvada/virauto/tmp/netmhcpan_${SLURM_JOB_ID}"
     mkdir -p "$TMPDIR"
 fi
 export TMPDIR
@@ -110,3 +112,11 @@ if [ $fail_count -gt 0 ]; then
 fi
 
 echo "[INFO] Job completed successfully"
+
+############################################################
+# CLEANUP AND LOGGING
+############################################################
+echo "[INFO] Cleaning up temporary directory..."
+rm -rf "$TMPDIR"
+
+echo "[INFO] Job completed successfully at $(date)"

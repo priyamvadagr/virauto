@@ -31,6 +31,7 @@ logs/*
 **/logs/
 *.out
 *.err
+slurm-*
 
 # TMP files 
 **/tmp/
