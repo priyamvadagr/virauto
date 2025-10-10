@@ -42,9 +42,9 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-out_dir = "/ix/djishnu/Priyamvada/virauto/results/virscan/mimicry_analysis/9_mers"
-hla_type = "B"
-netmhc_pan_file = f"/ix/djishnu/Priyamvada/virauto/results/netmhcpan/virscan/9_mers/type1/type1_concat/type1_{hla_type}_all_predictions_processed.txt"
+out_dir = "/ix/djishnu/Priyamvada/virauto/results/virscan/mimicry_analysis/9_mers/type1/"
+hla_type = "A"
+netmhc_pan_file = f"/ix/djishnu/Priyamvada/virauto/results/netmhcpan/virscan/9_mers/type1/type1_processed/type1_{hla_type}_all_predictions_processed.txt.gz"
 
 
 os.makedirs(os.path.join(out_dir, "data"), exist_ok=True)
@@ -53,7 +53,7 @@ os.makedirs(os.path.join(out_dir, "plots"), exist_ok=True)
 # ===================================================
 # Annotate and Classify Viral-Human Peptide Pairs 
 # ===================================================
-merged_diff = pd.read_csv(netmhc_pan_file, sep="\t")
+merged_diff = pd.read_csv(netmhc_pan_file, sep="\t", compression = 'gzip')
 
 # --- Define thresholds ---
 BA_rank_thresh = 2.0

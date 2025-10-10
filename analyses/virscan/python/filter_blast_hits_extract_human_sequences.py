@@ -2,11 +2,11 @@
 """
 ======================================================================
 Script: filter_blast_hits_extract_human_sequences.py
-Author: Priyamvada Guha Roy
 Description:
     This script filters BLAST alignment results between VirScan peptides 
     and the human proteome to identify human protein segments with 
-    75–95% sequence similarity to viral peptides. It then extracts the 
+    75–95% sequence similarity to viral peptides and remove uniprot ids
+    being dropped from new release. It then extracts the 
     corresponding subsequences from the UniProt human proteome FASTA file 
     and writes them to a new FASTA file for downstream analyses.
 
@@ -46,6 +46,7 @@ blast_file = "/ix/djishnu/Priyamvada/virauto/data/epitopes/virscan/all_peptides_
 out_df = '/ix/djishnu/Priyamvada/virauto/data/epitopes/virscan/similarity_filtered_blast_out.csv'
 human_fasta = "/ix/djishnu/Priyamvada/virauto/data/refs/uniprot/uniprot_human_all.fasta"
 out_fasta = "/ix/djishnu/Priyamvada/virauto/data/epitopes/virscan/filetered_human_protein_seqs.fasta"
+uniprot_filter = '/ix/djishnu/Priyamvada/virauto/data/refs/uniprot/proteins_to_remove_from_UniProtKB.txt'
 
 # ====================================================
 # Load blast results and filter to 75-95% similarity
@@ -55,11 +56,19 @@ cols = ["qseqid","sseqid","pident","length","mismatch","gapopen",
 
 df = pd.read_csv(blast_file, sep="\t", names=cols)
 
+uniprot_df = pd.read_csv(uniprot_filter , sep = '\t', names = ['hu_prot_id'])
+
 # Compute coverage-normalized similarity
 df["similarity"] = df["pident"] * (df["length"] / df["qlen"])
 
 hits = df[(df["similarity"] >= 75) & (df["similarity"] <= 95)]
-print(hits.head())
+print(hits.shape)
+
+hits['hu_prot_id'] = hits['sseqid'].str.split("|").str[1]
+
+hits = hits[hits['hu_prot_id'].isin(uniprot_df['hu_prot_id'])]
+print(hits.shape)
+
 
 # Save to file
 hits.to_csv(out_df, index=False)

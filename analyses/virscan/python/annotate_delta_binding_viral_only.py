@@ -38,10 +38,10 @@ Quantitative thresholds:
 # ====================================================
 k_mer = 9
 type_ = 'type1'
-class_ = 'A'
+class_ = 'C'
 base_out_dir = f"/ix/djishnu/Priyamvada/virauto/results/virscan/mimicry_analysis/viral_strong_binders/"
-out_dir = f"{k_mer}_mers/{type_}/data"
-netmhc_pan_file = f"/ix/djishnu/Priyamvada/virauto/results/netmhcpan/virscan/{k_mer}_mers/{type_}/{type_}_processed/{type_}_{class_}_all_predictions_processed.txt"
+out_dir = f"{base_out_dir}/{k_mer}_mers/{type_}/data"
+netmhc_pan_file = f"/ix/djishnu/Priyamvada/virauto/results/netmhcpan/virscan/{k_mer}_mers/{type_}/{type_}_processed/{type_}_{class_}_all_predictions_processed.txt.gz"
 
 # ====================================================
 # Packages
@@ -51,11 +51,10 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-
 # ===================================================
 # Annotate and Classify Viral-Human Peptide Pairs 
 # ===================================================
-merged_diff = pd.read_csv(netmhc_pan_file, sep="\t")
+merged_diff = pd.read_csv(netmhc_pan_file, sep="\t", compression = 'gzip')
 
 # --- Define thresholds ---
 BA_rank_thresh = 2.0
@@ -74,8 +73,8 @@ merged_diff.loc[both_bind & (merged_diff["BA_score_diff"] > BA_score_delta), "Mi
 # ====================================================
 # Save annotated file 
 # ====================================================
-os.makedirs(os.path.join(out_dir, "data"), exist_ok=True)
-merged_diff.to_csv(os.path.join(out_dir, f'{type_}_{class_}_mimicry_class_annotate.csv'))
+os.makedirs(out_dir, exist_ok=True)
+merged_diff.to_csv(os.path.join(out_dir, f'mimicry_class_annotate_{type_}_{class_}.csv'))
 # ===================================================
 # Summarize mimicry per HLA allele
 # ===================================================
@@ -94,4 +93,4 @@ for col in ["Equivalent_binding", "Viral_dominant", "Human_dominant", "Non_binde
 
 allele_summary = allele_summary.sort_values("Equivalent_binding_pct", ascending=False)
 allele_summary.to_csv(os.path.join(out_dir, f"allele_mimicry_summary_{type_}_{class_}.csv"))
-print("✅ Saved allele-wise mimicry summary")
+print(f"✅ Saved allele-wise mimicry summary for {type_} {class_}")

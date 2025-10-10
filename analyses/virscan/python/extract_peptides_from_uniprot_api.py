@@ -2,7 +2,6 @@
 """
 ======================================================================
 Script: extract_peptides_from_uniprot_api.py
-Author: Priyamvada Guha Roy
 Description:
     This script automates the extraction of peptide sequences corresponding 
     to VirScan peptide metadata by querying the UniProt REST API.

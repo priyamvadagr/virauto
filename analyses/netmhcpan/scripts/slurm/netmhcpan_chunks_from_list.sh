@@ -9,7 +9,7 @@
 #SBATCH --error=/ix/djishnu/Priyamvada/virauto/analyses/netmhcpan/logs/type1_chunks/A_chunks/netmhcpan_%A_%a.err
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=prg65@pitt.edu
-##SBATCH --cluster=smp
+#SBATCH --cluster=smp
 
 # --- Input files ---
 ALLELE_FILE=/ix/djishnu/Priyamvada/virauto/data/HLA_alleles/Type1_random_sampling/HLA_A_random200.txt

@@ -1,77 +1,140 @@
 #!/usr/bin/env python3
 """
-======================================================================
-Script: generate_paired_viral_human_fasta_chunks.py
-Author: Priyamvada Guha Roy
+===============================================================================
+Script: generate_paired_viral_human_kmers_and_fasta_chunks.py
 Description:
-    This script converts a CSV file containing paired viral–human k-mer 
-    peptide pairs into FASTA files formatted for downstream alignment or BLAST 
-    analyses. Each viral peptide is immediately followed by its matched 
-    human counterpart, preserving pairing order for alignment pipelines.
+    Generate paired viral–human k-mers from BLAST hits, excluding exact viral–human sequence matches.
+    Write the resulting pairs into chunked FASTA files (alternating VIRAL and HUMAN sequences).
 
 Workflow:
-    1. Load a CSV containing columns:
-       [pep_id, offset, viral_protein, human_protein, viral_kmer, human_kmer].
-    2. Create FASTA records for each viral and human k-mer.
-    3. Arrange records in alternating viral–human order.
-    4. Write sequences in batches (chunks) of 100 records per file.
+    1. Load filtered BLAST results.
+    2. Load viral and human protein FASTA files into dictionaries.
+    3. For each BLAST hit:
+        - Extract aligned human subsequence.
+        - Generate k-mers for viral and human regions.
+        - Pair positionally, skipping identical sequences.
+    4. Write alternating VIRAL–HUMAN FASTA records in chunks (default 100).
 
 Inputs:
-    - paired_viral_human_kmers.csv: CSV of matched viral–human k-mer pairs.
+    - similarity_filtered_blast_out.csv
+    - VirScan_peptides_api.fasta
+    - uniprot_human_all.fasta
 
 Outputs:
-    - matched_pairs_chunk_*.fasta: Chunked FASTA files containing 
-      alternating viral and human sequences.
+    - matched_pairs_chunk_*.fasta (e.g., matched_pairs_chunk_1.fasta)
+
+Parameters:
+    --kmer_size <int>    (default: 9)
+    --chunk_size <int>   (default: 100)
 
 Dependencies:
     - pandas
     - biopython
-
-Notes:
-    - Each FASTA record ID encodes the type (VIRAL/HUMAN), peptide ID, 
-      offset, and corresponding UniProt ID.
-    - The chunk size (default = 100) can be adjusted for batch size needs.
-
-Usage:
-    python generate_paired_viral_human_fasta_chunks.py
-======================================================================
+===============================================================================
 """
+
+import argparse
+import os
 import pandas as pd
+from Bio import SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
-from Bio import SeqIO
 
-# Load paired viral-human k-mer data
-df = pd.read_csv("/ix/djishnu/Priyamvada/virauto/data/epitopes/virscan/paired_k_mers/9_mers/paired_viral_human_9mers.csv")
+# ====================================================
+# Command-line arguments
+# ====================================================
+parser = argparse.ArgumentParser(
+    description="Generate paired viral–human k-mers (excluding identicals) and FASTA chunks."
+)
+parser.add_argument("--kmer", "-k", type=int, default=9, help="Length of k-mers (default: 9)")
+parser.add_argument("--chunk_size", "-c", type=int, default=100, help="FASTA chunk size (default: 100)")
+args = parser.parse_args()
 
-# Create list to hold alternating viral-human pairs
-all_records = []
+k = args.kmer
+chunk_size = args.chunk_size
 
-for _, row in df.iterrows():
-    pep_id = str(row["pep_id"])
-    offset = str(row["offset"])
-    vir_uniprot_id = str(row["viral_protein"]) 
-    hu_uniprot_id = str(row["human_protein"])
-    v_seq = str(row["viral_kmer"]).upper()
-    h_seq = str(row["human_kmer"]).upper()
-    
-    # Create viral and human records
-    viral_record = SeqRecord(Seq(v_seq), id=f"VIRAL_{pep_id}_{offset}_{vir_uniprot_id}", description="")
-    human_record = SeqRecord(Seq(h_seq), id=f"HUMAN_{pep_id}_{offset}_{hu_uniprot_id}", description="")
-    
-    # Add them consecutively (viral followed by human)
-    all_records.append(viral_record)
-    all_records.append(human_record)
+# ====================================================
+# File paths
+# ====================================================
+blast_hits_file = "/ix/djishnu/Priyamvada/virauto/data/epitopes/virscan/similarity_filtered_blast_out.csv"
+viral_fasta = "/ix/djishnu/Priyamvada/virauto/data/epitopes/virscan/VirScan_peptides_api.fasta"
+human_fasta = "/ix/djishnu/Priyamvada/virauto/data/refs/uniprot/uniprot_human_all.fasta"
 
-# Write records in chunks of 100
-chunk_size = 100
-output_dir = "/ix/djishnu/Priyamvada/virauto/data/epitopes/virscan/paired_k_mers/9_mers/chunks/"
+out_dir = f"/ix/djishnu/Priyamvada/virauto/data/epitopes/virscan/paired_k_mers/{k}_mers"
+os.makedirs(out_dir, exist_ok=True)
+chunk_dir = os.path.join(out_dir, "chunks")
+os.makedirs(chunk_dir, exist_ok=True)
 
-for i in range(0, len(all_records), chunk_size):
-    chunk = all_records[i:i + chunk_size]
+# ====================================================
+# Load BLAST hits
+# ====================================================
+blast_hits = pd.read_csv(blast_hits_file)
+print(f"[INFO] Loaded {len(blast_hits):,} BLAST alignments")
+
+# ====================================================
+# Load viral and human FASTAs into dictionaries
+# ====================================================
+viral_dict = {rec.id.split("|")[0]: str(rec.seq) for rec in SeqIO.parse(viral_fasta, "fasta")}
+print(f"[INFO] Loaded {len(viral_dict):,} viral peptide sequences")
+
+human_dict = {}
+for rec in SeqIO.parse(human_fasta, "fasta"):
+    acc = rec.id.split("|")[1] if "|" in rec.id else rec.id
+    human_dict[acc] = str(rec.seq)
+print(f"[INFO] Loaded {len(human_dict):,} human protein sequences")
+
+# ====================================================
+# Generate paired k-mers and FASTA records
+# ====================================================
+records = []
+dropped_pairs = 0
+
+for _, row in blast_hits.iterrows():
+    pep_id = str(row["qseqid"]).split("|")[0]
+    viral_protein = str(row["qseqid"]).split("|")[1]
+    human_id = str(row["sseqid"]).split("|")[1] if "|" in str(row["sseqid"]) else str(row["sseqid"])
+
+    vseq = viral_dict.get(pep_id)
+    hseq = human_dict.get(human_id)
+
+    if not vseq or not hseq:
+        continue
+
+    start, end = int(row["sstart"]), int(row["send"])
+    if start <= end:
+        h_aligned = hseq[start - 1:end]
+    else:
+        continue  # Skip reverse alignments
+
+    v_kmers = [vseq[i:i + k] for i in range(len(vseq) - k + 1)]
+    h_kmers = [h_aligned[i:i + k] for i in range(len(h_aligned) - k + 1)]
+
+    min_len = min(len(v_kmers), len(h_kmers))
+    for i in range(min_len):
+        vk = v_kmers[i].upper()
+        hk = h_kmers[i].upper()
+        if vk == hk:
+            dropped_pairs += 1
+            continue  # Skip identical viral-human k-mers
+
+        viral_record = SeqRecord(Seq(vk), id=f"VIRAL_{pep_id}_{i+1}_{viral_protein}", description="")
+        human_record = SeqRecord(Seq(hk), id=f"HUMAN_{pep_id}_{i+1}_{human_id}", description="")
+
+        records.append(viral_record)
+        records.append(human_record)
+
+print(f"[INFO] Generated {len(records)//2:,} non-identical viral–human pairs "
+      f"(dropped {dropped_pairs:,} identical matches)")
+
+# ====================================================
+# Write chunked FASTA files
+# ====================================================
+for i in range(0, len(records), chunk_size):
+    chunk = records[i:i + chunk_size]
     chunk_num = i // chunk_size + 1
-    output_file = f"{output_dir}matched_pairs_chunk_{chunk_num}.fasta"
+    output_file = os.path.join(chunk_dir, f"matched_pairs_chunk_{chunk_num}.fasta")
     SeqIO.write(chunk, output_file, "fasta")
-    print(f"Wrote chunk {chunk_num} with {len(chunk)} records to {output_file}")
+    print(f"   [Chunk {chunk_num}] Wrote {len(chunk)} sequences → {output_file}")
 
-print(f"\nTotal: {len(all_records)} records ({len(all_records)//2} viral-human pairs) written across {(len(all_records)-1)//chunk_size + 1} chunk files.")
+print(f"\n✅ Done: {len(records)} total sequences "
+      f"({len(records)//2} viral–human pairs) written to {len(os.listdir(chunk_dir))} chunk files.")
