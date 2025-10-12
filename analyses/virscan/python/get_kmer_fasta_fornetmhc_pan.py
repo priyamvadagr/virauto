@@ -59,7 +59,6 @@ chunk_size = args.chunk_size
 blast_hits_file = "/ix/djishnu/Priyamvada/virauto/data/epitopes/virscan/similarity_filtered_blast_out.csv"
 viral_fasta = "/ix/djishnu/Priyamvada/virauto/data/epitopes/virscan/VirScan_peptides_api.fasta"
 human_fasta = "/ix/djishnu/Priyamvada/virauto/data/refs/uniprot/uniprot_human_all.fasta"
-
 out_dir = f"/ix/djishnu/Priyamvada/virauto/data/epitopes/virscan/paired_k_mers/{k}_mers"
 os.makedirs(out_dir, exist_ok=True)
 chunk_dir = os.path.join(out_dir, "chunks")
@@ -123,9 +122,6 @@ for _, row in blast_hits.iterrows():
         records.append(viral_record)
         records.append(human_record)
 
-print(f"[INFO] Generated {len(records)//2:,} non-identical viral–human pairs "
-      f"(dropped {dropped_pairs:,} identical matches)")
-
 # ====================================================
 # Write chunked FASTA files
 # ====================================================
@@ -135,6 +131,10 @@ for i in range(0, len(records), chunk_size):
     output_file = os.path.join(chunk_dir, f"matched_pairs_chunk_{chunk_num}.fasta")
     SeqIO.write(chunk, output_file, "fasta")
     print(f"   [Chunk {chunk_num}] Wrote {len(chunk)} sequences → {output_file}")
+
+print(f"[INFO] Generated {len(records)//2:,} non-identical viral–human pairs "
+      f"(dropped {dropped_pairs:,} identical matches)")
+
 
 print(f"\n✅ Done: {len(records)} total sequences "
       f"({len(records)//2} viral–human pairs) written to {len(os.listdir(chunk_dir))} chunk files.")
