@@ -4,6 +4,7 @@
 # OPTIMIZED NETMHCPAN BATCH SUBMISSION
 # Processes peptide × allele chunk combinations
 # Much faster: processes 30 alleles per task instead of 3,000
+# Optimized checking strategies for existing outputs
 ############################################################
 
 # Exit on error but show helpful messages
@@ -13,12 +14,13 @@ set -uo pipefail
 PEPTIDE_DIR="/ix/djishnu/Priyamvada/virauto/data/epitopes/virscan/paired_k_mers/9_mers/split_chunks/chunk_2"
 ALLELE_CHUNK_DIR="/ix/djishnu/Priyamvada/virauto/data/HLA_alleles/Type1_NR_alleles/Type1_chunks"
 OUTDIR="/ix/djishnu/Priyamvada/virauto/results/netmhcpan/virscan/9_mers/Type1_NR/All_types_chunks/chunk_2"
-mkdir -p "$OUTDIR"
 LOG_DIR="/ix/djishnu/Priyamvada/virauto/analyses/netmhcpan/logs/Type1_NR_chunks/"
+JOB_OUT_DIR="/ix/djishnu/Priyamvada/virauto/analyses/netmhcpan/logs/Type1_NR_chunks/job_outputs"
+
 
 # Job batching parameters
 MAX_JOBS_PER_BATCH=100  # CRC cluster limit
-MAX_BATCHES_TO_SUBMIT=1  # Safety limit for initial run
+MAX_BATCHES_TO_SUBMIT=13  # Safety limit for initial run
 
 # Temporary directory for submission script 
 TMP_DIR_SUB="/ix/djishnu/Priyamvada/virauto/analyses/netmhcpan/logs/Type1_NR_chunks/tmp"
@@ -28,6 +30,7 @@ COMBO_DIR="$TMP_DIR_SUB/netmhcpan_combos_$$"
 mkdir -p "$COMBO_DIR"
 mkdir -p "$OUTDIR"
 mkdir -p "$LOG_DIR"
+mkdir -p "$JOB_OUT_DIR"
 
 ############################################################
 # STEP 1: VALIDATE INPUTS
@@ -82,85 +85,84 @@ echo "  ✓ Total combinations: $TOTAL_COMBINATIONS"
 echo ""
 
 ############################################################
-# STEP 2: ROBUST CHECK FOR EXISTING OUTPUTS
+# STEP 2: ULTRA-OPTIMIZED CHECK FOR EXISTING OUTPUTS
+# Multiple strategies to speed up when many files exist
 ############################################################
-echo "[2/5] Checking for existing outputs (robust fast version)..."
-
+############################################################
+# STEP 2: ULTRA-OPTIMIZED CHECK FOR EXISTING OUTPUTS
+############################################################
+echo "[2/5] Checking for existing outputs (optimized)..."
 check_start=$(date +%s)
+
 TMP_DIR="$TMP_DIR_SUB/netmhcpan_check_$$"
 mkdir -p "$TMP_DIR"
 
-# --- Index existing outputs ---
-echo "  [INFO] Indexing existing .xls files..."
-find "$OUTDIR" -maxdepth 1 -type f -name "*.xls" -printf "%f\n" > "$TMP_DIR/existing_outputs.txt"
+# Build index once
+echo "  Building index..."
+find "$OUTDIR" -maxdepth 1 -type f -name "*.xls" -printf "%f\n" > "$TMP_DIR/existing_outputs.txt" 2>/dev/null
 
+# Load into hash table
 declare -A existing_outputs
-while read -r filename; do
+while IFS= read -r filename; do
     existing_outputs["$filename"]=1
 done < "$TMP_DIR/existing_outputs.txt"
 
 num_existing=${#existing_outputs[@]}
-echo "  ✓ Found $num_existing existing outputs"
+echo "  ✓ Indexed $num_existing existing outputs"
 
-# --- Check all combinations ---
+# Early exit if 100% complete
+total_expected=$((${#PEPTIDE_FILES[@]} * $(cat "$ALLELE_CHUNK_DIR"/allele_chunk_*.txt | wc -l)))
+
+if [ "$num_existing" -ge "$total_expected" ]; then
+    echo "  ✓ All outputs exist (100% complete)"
+    rm -rf "$TMP_DIR"
+    echo ""
+    echo "✓ All combinations already processed!"
+    exit 0
+fi
+
+echo "  Completion: $num_existing/$total_expected ($(awk "BEGIN {printf \"%.1f\", ($num_existing/$total_expected)*100}")%)"
+
+# Optimized batch checking
+echo "  Checking combinations in batches..."
 UNPROCESSED_COMBOS=()
 processed_count=0
-unprocessed_count=0
-combo_num=0
 
 for pep_file in "${PEPTIDE_FILES[@]}"; do
-    [ -f "$pep_file" ] || continue
     pep_name=$(basename "$pep_file" .fasta)
-
+    
     for allele_file in "${ALLELE_CHUNKS[@]}"; do
-        [ -f "$allele_file" ] || continue
-
-        all_complete=true
-        missing_count=0
-
-        # For each allele in chunk, check if corresponding output exists
+        # Extract all alleles and check in one pass
+        has_missing=false
+        
         while read -r short_allele long_allele; do
             [[ -z "$short_allele" || -z "$long_allele" ]] && continue
-
-            safe_allele=$(echo "$long_allele" | tr '*' '_' | tr ':' '_')
+            
+            safe_allele=$(echo "$long_allele" | tr '*:' '__')
             expected_filename="${safe_allele}_${pep_name}.xls"
-
+            
             if [ -z "${existing_outputs[$expected_filename]+x}" ]; then
-                all_complete=false
-                ((missing_count++))
-                break  # early exit if any missing
+                has_missing=true
+                break  # Early exit on first missing
             fi
         done < "$allele_file"
-
-        if [ "$all_complete" = false ]; then
+        
+        if [ "$has_missing" = true ]; then
             UNPROCESSED_COMBOS+=("${pep_file}|${allele_file}")
-            ((unprocessed_count++))
         else
             ((processed_count++))
         fi
     done
-
-    ((combo_num++))
-    if (( combo_num % 50 == 0 )); then
-        echo "  Progress: checked $combo_num peptides..."
-    fi
 done
 
+rm -rf "$TMP_DIR"
 check_end=$(date +%s)
 check_time=$((check_end - check_start))
 
+echo "  ✓ Processed: $processed_count"
+echo "  ✗ Unprocessed: ${#UNPROCESSED_COMBOS[@]}"
+echo "  ⏱  Check time: ${check_time}s (~$(awk "BEGIN {printf \"%.1f\", $check_time/60}") min)"
 echo ""
-echo "  ✓ Processed count: $processed_count"
-echo "  ✗ Unprocessed count: $unprocessed_count"
-echo "  ⏱  Runtime: ${check_time}s (~$(awk "BEGIN {printf \"%.1f\", $check_time/60}") min)"
-echo ""
-
-if [ ${#UNPROCESSED_COMBOS[@]} -eq 0 ]; then
-    echo "✓ All combinations already processed!"
-    rm -rf "$TMP_DIR"
-    exit 0
-fi
-
 
 ############################################################
 # STEP 3: CREATE BATCH FILES
@@ -377,6 +379,7 @@ EOFWRAPPER
     SBATCH_CMD="sbatch"
     SBATCH_CMD="$SBATCH_CMD --array=1-${num_combos}"
     SBATCH_CMD="$SBATCH_CMD --export=ALL,COMBO_FILE=${batch_file},BATCH_NUMBER=${batch_num},TOTAL_BATCHES=${TOTAL_BATCHES}"
+    SBATCH_CMD="$SBATCH_CMD --output=$JOB_OUT_DIR/batch_${batch_num}_%A.out"
     
     # Submit batch with dependency chain
     if [ -n "$PREV_JOB_ID" ]; then

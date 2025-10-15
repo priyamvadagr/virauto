@@ -1,392 +1,110 @@
 #!/bin/bash
 
 ############################################################
-# OPTIMIZED NETMHCPAN BATCH SUBMISSION
-# Processes peptide × allele chunk combinations
-# Much faster: processes 30 alleles per task instead of 3,000
+# SPLIT ALLELE FILE INTO CHUNKS
+# Divides 3,000 alleles into smaller chunks for better
+# parallelization
 ############################################################
-
-# Exit on error but show helpful messages
-set -uo pipefail
 
 # --- Configuration ---
-PEPTIDE_DIR="/ix/djishnu/Priyamvada/virauto/data/epitopes/virscan/paired_k_mers/9_mers"
-ALLELE_CHUNK_DIR="/ix/djishnu/Priyamvada/virauto/data/HLA_alleles/Type1_chunks"
-OUTDIR="/ix/djishnu/Priyamvada/virauto/results/netmhcpan/virscan/9_mers/type1/automated_run"
-LOG_DIR="/ix/djishnu/Priyamvada/virauto/analyses/netmhcpan/logs/type1_chunks"
+# UPDATE THIS PATH to your actual 3000-allele file
+INPUT_ALLELE_FILE="/ix/djishnu/Priyamvada/virauto/data/HLA_alleles/Type1_3000_alleles.txt"
+OUTPUT_DIR="/ix/djishnu/Priyamvada/virauto/data/HLA_alleles/Type1_chunks"
+ALLELES_PER_CHUNK=30  # Adjust this: 30 = 100 chunks, 50 = 60 chunks, 100 = 30 chunks
 
-# Job batching parameters
-MAX_JOBS_PER_BATCH=100  # CRC cluster limit
-MAX_BATCHES_TO_SUBMIT=10  # Safety limit for initial run
-
-# Temporary directory for job combinations
-COMBO_DIR="/ix/djishnu/Priyamvada/virauto/tmp/netmhcpan_combos_$$"
-mkdir -p "$COMBO_DIR"
-mkdir -p "$OUTDIR"
-mkdir -p "$LOG_DIR"
-
-############################################################
-# STEP 1: VALIDATE INPUTS
-############################################################
 echo "=========================================="
-echo "  NetMHCpan Optimized Submission"
+echo "  Allele File Splitter"
 echo "=========================================="
 echo ""
-echo "[1/5] Validating inputs..."
+echo "Configuration:"
+echo "  Input file: $INPUT_ALLELE_FILE"
+echo "  Output dir: $OUTPUT_DIR"
+echo "  Alleles per chunk: $ALLELES_PER_CHUNK"
+echo ""
 
-# Check if allele chunks exist
-if [ ! -d "$ALLELE_CHUNK_DIR" ]; then
+# Check input file exists
+if [ ! -f "$INPUT_ALLELE_FILE" ]; then
+    echo "ERROR: Allele file not found!"
+    echo "  Looking for: $INPUT_ALLELE_FILE"
     echo ""
-    echo "ERROR: Allele chunk directory not found: $ALLELE_CHUNK_DIR"
+    echo "Please update INPUT_ALLELE_FILE in this script to point to your 3000-allele file."
     echo ""
-    echo "Please run split_alleles.sh first to create allele chunks:"
-    echo "  ./split_alleles.sh"
+    echo "Looking for possible allele files in the area..."
+    find /ix/djishnu/Priyamvada/virauto/data/HLA_alleles/ -name "*.txt" -type f 2>/dev/null | head -10
     echo ""
     exit 1
 fi
 
-# Check peptide directory exists
-if [ ! -d "$PEPTIDE_DIR" ]; then
-    echo ""
-    echo "ERROR: Peptide directory not found: $PEPTIDE_DIR"
-    echo ""
-    echo "Please update PEPTIDE_DIR path in this script."
-    echo ""
-    exit 1
-fi
+mkdir -p "$OUTPUT_DIR"
 
-# Count allele chunks
-mapfile -t ALLELE_CHUNKS < <(find "$ALLELE_CHUNK_DIR" -name "allele_chunk_*.txt" -type f | sort)
-if [ ${#ALLELE_CHUNKS[@]} -eq 0 ]; then
-    echo "ERROR: No allele chunk files found in $ALLELE_CHUNK_DIR"
-    exit 1
-fi
+# Count total alleles
+total_alleles=$(wc -l < "$INPUT_ALLELE_FILE")
+echo "Total alleles: $total_alleles"
+echo "Alleles per chunk: $ALLELES_PER_CHUNK"
 
-# Count peptide files
-mapfile -t PEPTIDE_FILES < <(find "$PEPTIDE_DIR" -name "*.fasta" -type f | sort)
-if [ ${#PEPTIDE_FILES[@]} -eq 0 ]; then
-    echo "ERROR: No FASTA files found in $PEPTIDE_DIR"
-    exit 1
-fi
-
-echo "  ✓ Peptide files: ${#PEPTIDE_FILES[@]}"
-echo "  ✓ Allele chunks: ${#ALLELE_CHUNKS[@]}"
-
-# Calculate total combinations
-TOTAL_COMBINATIONS=$((${#PEPTIDE_FILES[@]} * ${#ALLELE_CHUNKS[@]}))
-echo "  ✓ Total combinations: $TOTAL_COMBINATIONS"
+# Calculate number of chunks
+num_chunks=$(( (total_alleles + ALLELES_PER_CHUNK - 1) / ALLELES_PER_CHUNK ))
+echo "Number of chunks: $num_chunks"
 echo ""
 
-############################################################
-# STEP 2: CHECK EXISTING OUTPUTS
-############################################################
-echo "[2/5] Checking for existing outputs..."
-
-UNPROCESSED_COMBOS=()
-processed_count=0
-
-# For each combination, check if all expected outputs exist
-for pep_file in "${PEPTIDE_FILES[@]}"; do
-    pep_name=$(basename "$pep_file" .fasta)
-    
-    for allele_chunk in "${ALLELE_CHUNKS[@]}"; do
-        chunk_name=$(basename "$allele_chunk" .txt)
-        allele_count=$(wc -l < "$allele_chunk")
-        
-        # Count how many outputs exist for this combination
-        existing_outputs=$(find "$OUTDIR" -name "*_${pep_name}.xls" -type f 2>/dev/null | \
-                          xargs grep -l "$(head -1 "$allele_chunk" | awk '{print $1}')" 2>/dev/null | wc -l)
-        
-        # Simple heuristic: if any output exists for this combo, check more carefully
-        # For speed, we'll just check if the expected number of files exist
-        outputs_for_combo=$(find "$OUTDIR" -name "*_${pep_name}.xls" -type f | wc -l)
-        
-        if [ $outputs_for_combo -lt $allele_count ]; then
-            UNPROCESSED_COMBOS+=("${pep_file}|${allele_chunk}")
-        else
-            ((processed_count++))
-        fi
-    done
-done
-
-echo "  Already processed: $processed_count combinations"
-echo "  Remaining: ${#UNPROCESSED_COMBOS[@]} combinations"
-echo ""
-
-if [ ${#UNPROCESSED_COMBOS[@]} -eq 0 ]; then
-    echo "✓ All combinations already processed!"
-    exit 0
-fi
-
-############################################################
-# STEP 3: CREATE BATCH FILES
-############################################################
-echo "[3/5] Creating batch files..."
-
-BATCH_FILES=()
-batch_num=1
-
-for ((i=0; i<${#UNPROCESSED_COMBOS[@]}; i+=MAX_JOBS_PER_BATCH)); do
-    batch_file="$COMBO_DIR/batch_${batch_num}.txt"
-    
-    # Get up to MAX_JOBS_PER_BATCH combinations
-    end=$((i + MAX_JOBS_PER_BATCH))
-    if [ $end -gt ${#UNPROCESSED_COMBOS[@]} ]; then
-        end=${#UNPROCESSED_COMBOS[@]}
-    fi
-    
-    # Write combinations to batch file
-    for ((j=i; j<end; j++)); do
-        echo "${UNPROCESSED_COMBOS[$j]}" >> "$batch_file"
-    done
-    
-    BATCH_FILES+=("$batch_file")
-    num_in_batch=$((end - i))
-    echo "  Batch $batch_num: $num_in_batch combinations"
-    ((batch_num++))
-    
-    # Safety check: don't create too many batches
-    if [ $batch_num -gt $MAX_BATCHES_TO_SUBMIT ]; then
-        echo ""
-        echo "  (Limited to first $MAX_BATCHES_TO_SUBMIT batches for safety)"
-        break
-    fi
-done
-
-TOTAL_BATCHES=${#BATCH_FILES[@]}
-echo "  Total batches to submit: $TOTAL_BATCHES"
-echo ""
-
-############################################################
-# STEP 4: CONFIRM SUBMISSION
-############################################################
-echo "[4/5] Ready to submit..."
-echo ""
-echo "Summary:"
-echo "  Peptide chunks: ${#PEPTIDE_FILES[@]}"
-echo "  Allele chunks: ${#ALLELE_CHUNKS[@]} (~30 alleles each)"
-echo "  Combinations to process: ${#UNPROCESSED_COMBOS[@]}"
-echo "  Batches: $TOTAL_BATCHES (max $MAX_JOBS_PER_BATCH jobs per batch)"
-echo "  Time per task: ~3-20 minutes (much faster!)"
-echo "  Estimated completion: ~1-2 days (with good parallelization)"
-echo ""
-
-if [ $TOTAL_BATCHES -gt $MAX_BATCHES_TO_SUBMIT ]; then
-    echo "NOTE: Only submitting first $MAX_BATCHES_TO_SUBMIT batches."
-    echo "      Run this script again after completion to submit more."
-    echo ""
-fi
-
-read -p "Proceed with submission? (yes/no): " confirm
+# Confirm
+read -p "Split into $num_chunks chunks? (yes/no): " confirm
 if [[ ! $confirm =~ ^[Yy][Ee][Ss]$ ]]; then
     echo "Aborted"
-    rm -rf "$COMBO_DIR"
     exit 0
 fi
 
-############################################################
-# STEP 5: SUBMIT JOBS WITH DEPENDENCIES
-############################################################
 echo ""
-echo "[5/5] Submitting jobs..."
-echo ""
+echo "Splitting..."
 
-PREV_JOB_ID=""
-SUBMITTED_JOBS=()
+# Split the file
+split -l $ALLELES_PER_CHUNK -d -a 3 "$INPUT_ALLELE_FILE" "$OUTPUT_DIR/allele_chunk_"
 
-for ((i=0; i<${#BATCH_FILES[@]}; i++)); do
-    batch_num=$((i + 1))
-    batch_file="${BATCH_FILES[$i]}"
-    num_combos=$(wc -l < "$batch_file")
-    
-    echo "[$batch_num/$TOTAL_BATCHES] Submitting batch $batch_num ($num_combos combinations)..."
-    
-    # Create a complete self-contained wrapper script
-    wrapper_script="$COMBO_DIR/wrapper_batch_${batch_num}.sh"
-    
-    cat > "$wrapper_script" << 'EOFWRAPPER'
-#!/bin/bash
-#SBATCH -J netmhcpan_auto
-#SBATCH -N 1
-#SBATCH -c 4
-#SBATCH -t 0-02:00:00
-#SBATCH --mem=8G
-#SBATCH --constraint=amd
-#SBATCH --mail-type=FAIL
-#SBATCH --mail-user=prg65@pitt.edu
-#SBATCH --cluster=smp
-
-# Get the combination for this array task
-COMBO=$(sed -n "${SLURM_ARRAY_TASK_ID}p" "${COMBO_FILE}")
-
-# Split into peptide and allele files
-PEPTIDE_FILE=$(echo "$COMBO" | cut -d'|' -f1)
-ALLELE_FILE=$(echo "$COMBO" | cut -d'|' -f2)
-
-# Validate inputs
-if [ -z "$PEPTIDE_FILE" ] || [ ! -f "$PEPTIDE_FILE" ]; then
-    echo "[ERROR] Invalid peptide file: $PEPTIDE_FILE"
-    exit 1
-fi
-
-if [ -z "$ALLELE_FILE" ] || [ ! -f "$ALLELE_FILE" ]; then
-    echo "[ERROR] Invalid allele file: $ALLELE_FILE"
-    exit 1
-fi
-
-# Output directory
-OUTDIR="PLACEHOLDER_OUTDIR"
-LOG_DIR="PLACEHOLDER_LOGDIR"
-mkdir -p "$OUTDIR"
-mkdir -p "$LOG_DIR"
-
-# Setup temp directory
-if [ -d "$SLURM_SCRATCH" ] && [ -w "$SLURM_SCRATCH" ]; then
-    TMPDIR="$SLURM_SCRATCH/netmhcpan_${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}"
-else
-    TMPDIR="/tmp/netmhcpan_${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}"
-fi
-mkdir -p "$TMPDIR"
-export TMPDIR
-
-# Get identifiers for logging
-PEPTIDE_NAME=$(basename "$PEPTIDE_FILE" .fasta)
-ALLELE_NAME=$(basename "$ALLELE_FILE" .txt)
-
-echo "[INFO] =========================================="
-echo "[INFO] Batch PLACEHOLDER_BATCH_NUM/PLACEHOLDER_TOTAL_BATCHES - Task $SLURM_ARRAY_TASK_ID"
-echo "[INFO] Job ID: ${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}"
-echo "[INFO] Host: $(hostname)"
-echo "[INFO] Start: $(date)"
-echo "[INFO] =========================================="
-echo "[INFO] Peptide: $PEPTIDE_NAME"
-echo "[INFO] Allele chunk: $ALLELE_NAME"
-echo "[INFO] =========================================="
-
-# Run NetMHCpan for each allele in this chunk
-allele_count=0
-success_count=0
-fail_count=0
-skip_count=0
-
-while read -r short long; do
-    [[ -z "$short" || -z "$long" ]] && continue
-    
-    ((allele_count++))
-    
-    SAFE_NAME=$(echo "$long" | tr '*' '_' | tr ':' '_')
-    OUT_TXT="${OUTDIR}/${SAFE_NAME}_${PEPTIDE_NAME}.txt"
-    OUT_XLS="${OUTDIR}/${SAFE_NAME}_${PEPTIDE_NAME}.xls"
-    
-    # Skip if output exists
-    if [ -f "$OUT_XLS" ] && [ -s "$OUT_XLS" ]; then
-        ((skip_count++))
-        ((success_count++))
-        continue
+# Rename to add .txt extension
+for file in "$OUTPUT_DIR"/allele_chunk_*; do
+    if [[ ! "$file" =~ \.txt$ ]]; then
+        mv "$file" "${file}.txt"
     fi
-    
-    echo "[RUN] ($allele_count) $long → $(basename $OUT_XLS)"
-    
-    netMHCpan -a "$short" -f "$PEPTIDE_FILE" -BA -xls -xlsfile "$OUT_XLS" > "$OUT_TXT" 2>&1
-    
-    if [ $? -eq 0 ]; then
-        ((success_count++))
-        echo "      ✓ Success"
-    else
-        ((fail_count++))
-        echo "      ✗ Failed"
-    fi
-done < "$ALLELE_FILE"
-
-# Cleanup
-rm -rf "$TMPDIR"
-
-echo ""
-echo "[INFO] =========================================="
-echo "[INFO] Summary"
-echo "[INFO] Total: $allele_count | Success: $success_count | Skip: $skip_count | Fail: $fail_count"
-echo "[INFO] End: $(date)"
-echo "[INFO] =========================================="
-
-if [ $fail_count -gt 0 ]; then
-    exit 1
-fi
-EOFWRAPPER
-
-    # Replace placeholders
-    sed -i "s|PLACEHOLDER_OUTDIR|$OUTDIR|g" "$wrapper_script"
-    sed -i "s|PLACEHOLDER_LOGDIR|$LOG_DIR|g" "$wrapper_script"
-    sed -i "s|PLACEHOLDER_BATCH_NUM|$batch_num|g" "$wrapper_script"
-    sed -i "s|PLACEHOLDER_TOTAL_BATCHES|$TOTAL_BATCHES|g" "$wrapper_script"
-    
-    chmod +x "$wrapper_script"
-    
-    # Build sbatch command
-    SBATCH_CMD="sbatch"
-    SBATCH_CMD="$SBATCH_CMD --array=1-${num_combos}"
-    SBATCH_CMD="$SBATCH_CMD --export=ALL,COMBO_FILE=${batch_file},BATCH_NUMBER=${batch_num},TOTAL_BATCHES=${TOTAL_BATCHES}"
-    
-    # Add dependency if not first batch
-    if [ -n "$PREV_JOB_ID" ]; then
-        SBATCH_CMD="$SBATCH_CMD --dependency=afterok:${PREV_JOB_ID}"
-        echo "  └─ Depends on job: $PREV_JOB_ID"
-    fi
-    
-    SBATCH_CMD="$SBATCH_CMD $wrapper_script"
-    
-    # Submit
-    job_output=$(eval $SBATCH_CMD)
-    job_id=$(echo "$job_output" | grep -oP '\d+')
-    
-    if [ -z "$job_id" ]; then
-        echo "  ✗ Failed to submit"
-        exit 1
-    fi
-    
-    echo "  ✓ Job ID: $job_id"
-    SUBMITTED_JOBS+=("$job_id")
-    PREV_JOB_ID="$job_id"
-    
-    sleep 0.5
 done
 
-############################################################
-# SUMMARY
-############################################################
-echo ""
-echo "=========================================="
-echo "  Submission Complete!"
-echo "=========================================="
-echo ""
-echo "Submitted $TOTAL_BATCHES batches:"
-for ((i=0; i<${#SUBMITTED_JOBS[@]}; i++)); do
-    batch_num=$((i + 1))
-    num_combos=$(wc -l < "${BATCH_FILES[$i]}")
-    echo "  Batch $batch_num: Job ${SUBMITTED_JOBS[$i]} ($num_combos combinations)"
-done
-echo ""
-echo "Jobs will run automatically with dependencies."
-echo ""
-echo "Monitor:"
-echo "  ./monitor_netmhcpan_progress.sh"
-echo "  watch -n 60 './monitor_netmhcpan_progress.sh'"
-echo ""
-echo "Check queue:"
-echo "  squeue -u $USER"
-echo ""
-echo "Cancel all:"
-echo "  scancel $(IFS=' '; echo "${SUBMITTED_JOBS[*]}")"
-echo ""
-echo "Batch info saved in: $COMBO_DIR"
-echo "=========================================="
-
-# Save job tracking
-JOB_TRACKING="$COMBO_DIR/submitted_jobs.txt"
-for ((i=0; i<${#SUBMITTED_JOBS[@]}; i++)); do
-    batch_num=$((i + 1))
-    echo "Batch_${batch_num}: ${SUBMITTED_JOBS[$i]}" >> "$JOB_TRACKING"
-done
+# Verify
+actual_chunks=$(ls "$OUTPUT_DIR"/allele_chunk_*.txt 2>/dev/null | wc -l)
 
 echo ""
-echo "Run again after completion to submit remaining batches (if any)"
+echo "=========================================="
+echo "  Complete!"
+echo "=========================================="
+echo ""
+echo "Created $actual_chunks chunk files in:"
+echo "  $OUTPUT_DIR"
+echo ""
+echo "Chunk files:"
+ls "$OUTPUT_DIR"/allele_chunk_*.txt | head -10
+if [ $actual_chunks -gt 10 ]; then
+    echo "  ... and $((actual_chunks - 10)) more"
+fi
+echo ""
+
+# Show sample from first chunk
+echo "Sample from first chunk:"
+head -3 "$OUTPUT_DIR"/allele_chunk_000.txt | sed 's/^/  /'
+echo ""
+
+# Create index file for reference
+INDEX_FILE="$OUTPUT_DIR/allele_chunks_index.txt"
+echo "# Allele chunk index" > "$INDEX_FILE"
+echo "# Created: $(date)" >> "$INDEX_FILE"
+echo "# Total alleles: $total_alleles" >> "$INDEX_FILE"
+echo "# Alleles per chunk: $ALLELES_PER_CHUNK" >> "$INDEX_FILE"
+echo "# Total chunks: $actual_chunks" >> "$INDEX_FILE"
+echo "" >> "$INDEX_FILE"
+
+chunk_num=0
+for chunk_file in "$OUTPUT_DIR"/allele_chunk_*.txt; do
+    chunk_alleles=$(wc -l < "$chunk_file")
+    echo "chunk_${chunk_num}: $chunk_file ($chunk_alleles alleles)" >> "$INDEX_FILE"
+    ((chunk_num++))
+done
+
+echo "Index file created: $INDEX_FILE"
 echo ""
