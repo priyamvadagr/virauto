@@ -11,9 +11,9 @@
 set -uo pipefail
 
 # --- Configuration ---
-PEPTIDE_DIR="/ix/djishnu/Priyamvada/virauto/data/epitopes/virscan/paired_k_mers/9_mers/split_chunks/chunk_2"
+PEPTIDE_DIR="/ix/djishnu/Priyamvada/virauto/data/epitopes/virscan/paired_k_mers/9_mers/split_chunks/chunk_6"
 ALLELE_CHUNK_DIR="/ix/djishnu/Priyamvada/virauto/data/HLA_alleles/Type1_NR_alleles/Type1_chunks"
-OUTDIR="/ix/djishnu/Priyamvada/virauto/results/netmhcpan/virscan/9_mers/Type1_NR/All_types_chunks/chunk_2"
+OUTDIR="/ix/djishnu/Priyamvada/virauto/results/netmhcpan/virscan/9_mers/Type1_NR/Type1_NR_all_chunks/chunk_6"
 LOG_DIR="/ix/djishnu/Priyamvada/virauto/analyses/netmhcpan/logs/Type1_NR_chunks/"
 JOB_OUT_DIR="/ix/djishnu/Priyamvada/virauto/analyses/netmhcpan/logs/Type1_NR_chunks/job_outputs"
 
@@ -267,7 +267,7 @@ for ((i=0; i<${#BATCH_FILES[@]}; i++)); do
 #SBATCH --constraint=amd
 #SBATCH --mail-type=FAIL
 #SBATCH --mail-user=prg65@pitt.edu
-#SBATCH --cluster=htc
+#SBATCH --cluster=smp
 #SBATCH --out=slurm-%A.out
 
 # Get the combination for this array task

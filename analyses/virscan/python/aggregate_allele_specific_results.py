@@ -33,15 +33,6 @@ Example Usage:
     python merge_netmhcpan_predictions.py --type type1 --class B --kmer 9
 ======================================================================
 """
-#!/usr/bin/env python3
-"""
-Fast Merge Script for NetMHCpan Predictions
-===========================================
-Optimized for:
-- Parallel processing with resumable progress
-- Batched disk writes (~10–20 merges at a time)
-- Memory efficiency using on-the-fly gzip compression
-"""
 
 # ===================================================
 # Import Required Libraries
@@ -63,8 +54,12 @@ parser.add_argument(
     help="MHC type (e.g., type1 or type2)"
 )
 parser.add_argument(
-    "--class", dest="class_", required=True,
-    help="MHC class (e.g., A, B, C)"
+    "--class", dest="class_", required=False, default="all",
+    help="MHC class (e.g., A, B, C, all)"
+)
+parser.add_argument(
+    "--chunk", dest="chunk", required=False, default=None,
+    help="Specific chunk number to process"
 )
 parser.add_argument(
     "--kmer", dest="k_mer", type=int, required=True,
@@ -95,16 +90,21 @@ BATCH_SIZE = args.batch_size
 MAX_WORKERS = args.workers
 base_results = args.results_dir
 base_data = args.data_dir
+chunk = args.chunk
 
 
 # ===================================================
 # Configuration and Directory Setup
 # ===================================================
-netmhc_dir = f"{base_results}/{k_mer}_mers/{type_}/{type_}_{class_}_chunks"
+if chunk:
+    netmhc_dir = f"{base_results}/{k_mer}_mers/{type_}/{type_}_{class_}_chunks/{chunk}"
+else:
+    netmhc_dir = f"{base_results}/{k_mer}_mers/{type_}/{type_}_{class_}_chunks"
+    
 fasta_dir = f"{base_data}/paired_k_mers/{k_mer}_mers/chunks"
 out_dir = f"{base_results}/{k_mer}_mers/{type_}/{type_}_processed"
 os.makedirs(out_dir, exist_ok=True)
-out_file = os.path.join(out_dir, f"{type_}_{class_}_all_predictions_processed.txt.gz")
+out_file = os.path.join(out_dir, f"{type_}_{class_}_{chunk}_all_predictions_processed.txt.gz")
 
 print(f"⚙️  Configuration:")
 print(f"   MHC Type:     {type_}")
@@ -123,11 +123,11 @@ if os.path.exists(out_file):
     prev = pd.read_csv(
         out_file,
         sep="\t",
-        usecols=["source_file_human"],
+        usecols=["source_file_human_human"],
         compression="gzip",
         low_memory=False
     )
-    processed_files = set(prev["source_file_human"].unique())
+    processed_files = set(prev["source_file_human_human"].unique())
     print(f"Found {len(processed_files)} processed files in {out_file}")
 
 
@@ -135,7 +135,6 @@ if os.path.exists(out_file):
 # Define Regex Patterns
 # ===================================================
 chunk_re = re.compile(r'chunk_(\d+)')
-header_re = re.compile(r'^>(VIRAL|HUMAN)_(\d+_\d+)_.*?_(\w+)$')
 
 
 # ===================================================
@@ -147,18 +146,23 @@ def extract_chunk_number(path):
 
 
 # ===================================================
-# Read FASTA File (Efficient Regex-Based Parser)
+# Read FASTA File (Extract type, pair_id, and uniprot)
 # ===================================================
 def read_fasta_fast(path):
     recs = []
     with open(path) as f:
         for line in f:
             if line.startswith(">"):
-                m = header_re.match(line.strip())
-                if m:
-                    typ, pair_id, uid = m.groups()
-                    recs.append((line[1:].strip(), typ, pair_id, uid))
-    return pd.DataFrame(recs, columns=["full_id", "type", "pair_id", "uniprot"])
+                full_id = line[1:].strip()  # e.g., "VIRAL_45607_22_P50822"
+                parts = full_id.split('_')
+                
+                if len(parts) >= 4:
+                    typ = parts[0]                      # "VIRAL" or "HUMAN"
+                    pair_id = f"{parts[1]}_{parts[2]}"  # "45607_22"
+                    uniprot = parts[3]                  # "P50822"
+                    recs.append((typ, pair_id, uniprot))
+                    
+    return pd.DataFrame(recs, columns=["type", "pair_id", "uniprot"])
 
 
 # ===================================================
@@ -181,13 +185,13 @@ def process_one(xls_file):
     if len(df) != len(fasta_df):
         return None
 
-    # Annotate and align peptide data
+    # Annotate with FASTA metadata
     df["Allele"] = allele
     df["chunk"] = chunk
     df["source_file_human"] = base
     df["type"] = fasta_df["type"].values
     df["pair_id"] = fasta_df["pair_id"].values
-    df["Peptide_ID_full"] = fasta_df["full_id"].values
+    df["uniprot"] = fasta_df["uniprot"].values
 
     # Separate viral and human peptides, then merge on pair_id + Allele
     viral = df[df["type"] == "VIRAL"]
@@ -198,7 +202,17 @@ def process_one(xls_file):
         on=["pair_id", "Allele"],
         suffixes=("_viral", "_human")
     )
+    
+    # Remove identical peptide pairs
     merged = merged[merged["Peptide_viral"] != merged["Peptide_human"]]
+    
+    # Drop unnecessary columns - keep only one pair_id and the two uniprot columns
+    # Note: pair_id has no suffix since it's a merge key
+    if not merged.empty:
+        # Drop the type columns (we don't need them after merge)
+        cols_to_drop = [col for col in merged.columns if col in ['type_viral', 'type_human']]
+        merged = merged.drop(columns=cols_to_drop)
+    
     return merged if not merged.empty else None
 
 
@@ -222,7 +236,7 @@ total_written = 0
 
 with concurrent.futures.ProcessPoolExecutor(max_workers=MAX_WORKERS) as exe:
     with tqdm(total=len(unprocessed), desc="Processing NetMHCpan chunks", dynamic_ncols=True) as pbar:
-        for result in exe.map(process_one, unprocessed):
+        for result in exe.map(process_one, unprocessed, chunksize=100):
             if result is not None:
                 batch.append(result)
 

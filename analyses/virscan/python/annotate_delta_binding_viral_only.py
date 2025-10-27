@@ -37,8 +37,8 @@ Quantitative thresholds:
 # Config 
 # ====================================================
 k_mer = 9
-type_ = 'type1'
-class_ = 'C'
+type_ = 'Type1_NR'
+class_ = 'all'
 base_out_dir = f"/ix/djishnu/Priyamvada/virauto/results/virscan/mimicry_analysis/viral_strong_binders/"
 out_dir = f"{base_out_dir}/{k_mer}_mers/{type_}/data"
 netmhc_pan_file = f"/ix/djishnu/Priyamvada/virauto/results/netmhcpan/virscan/{k_mer}_mers/{type_}/{type_}_processed/{type_}_{class_}_all_predictions_processed.txt.gz"

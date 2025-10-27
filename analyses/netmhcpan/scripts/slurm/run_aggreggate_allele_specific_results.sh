@@ -3,15 +3,17 @@
 #SBATCH -N 1
 #SBATCH -c 8
 #SBATCH -t 1-00:00
-#SBATCH --mem=16G
+#SBATCH --mem=100G
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=prg65@pitt.edu
+#SBATCH --cluster=htc
 
 # ===================================================
 # Setup and Timestamped Logging
 # ===================================================
-TYPE="type1"
-CLASS="A"
+TYPE="Type1_NR"
+CLASS="all"
+CHUNK='chunk_3'
 K_MER=9
 
 # Directory for all logs
@@ -53,6 +55,7 @@ echo
 python /ix/djishnu/Priyamvada/virauto/analyses/virscan/python/aggregate_allele_specific_results.py \
     --type $TYPE \
     --class $CLASS \
+    --chunk $CHUNK \
     --kmer $K_MER
 
 # ===================================================
