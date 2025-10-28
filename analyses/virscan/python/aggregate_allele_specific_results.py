@@ -11,9 +11,11 @@ Description:
     (k-mer size) via command-line arguments.
 
 Enhancement:
-    If the output file already exists, previously processed files are 
-    detected via `source_file_human`, and only new NetMHCpan results 
-    not already included in the output are processed and appended.
+    - Uses manifest file to track processed files (fast resume)
+    - Splits output into multiple files to avoid large file issues
+    - If the output file already exists, previously processed files are 
+      detected via manifest, and only new NetMHCpan results 
+      not already included in the output are processed and appended.
 
 Workflow:
     1. Load all NetMHCpan .xls prediction files from the specified directory.
@@ -22,7 +24,7 @@ Workflow:
     4. Merge FASTA metadata with NetMHCpan predictions (1:1 order).
     5. Split into viral and human subsets, merge on pair ID and allele.
     6. Remove duplicate and identical peptide pairs.
-    7. Batched disk writes (~10–20 merges at a time) to existing file
+    7. Batched disk writes (~10–20 merges at a time) to split output files
 
 CLI Arguments:
     --type   : MHC binding type (e.g., type1, type2)
@@ -41,6 +43,8 @@ import pandas as pd
 import os, re, glob, gzip, argparse
 import concurrent.futures
 from tqdm import tqdm
+import json
+from datetime import datetime
 
 
 # ===================================================
@@ -81,6 +85,14 @@ parser.add_argument(
     "--workers", type=int, default=8,
     help="Number of parallel worker processes"
 )
+parser.add_argument(
+    "--max_rows_per_file", type=int, default=1000000,
+    help="Maximum rows per output file before creating a new one"
+)
+parser.add_argument(
+    "--force_reprocess", action="store_true",
+    help="Ignore manifest and reprocess all files"
+)
 
 args = parser.parse_args()
 type_ = args.type_
@@ -88,6 +100,7 @@ class_ = args.class_
 k_mer = args.k_mer
 BATCH_SIZE = args.batch_size
 MAX_WORKERS = args.workers
+MAX_ROWS_PER_FILE = args.max_rows_per_file
 base_results = args.results_dir
 base_data = args.data_dir
 chunk = args.chunk
@@ -104,7 +117,9 @@ else:
 fasta_dir = f"{base_data}/paired_k_mers/{k_mer}_mers/chunks"
 out_dir = f"{base_results}/{k_mer}_mers/{type_}/{type_}_processed"
 os.makedirs(out_dir, exist_ok=True)
-out_file = os.path.join(out_dir, f"{type_}_{class_}_{chunk}_all_predictions_processed.txt.gz")
+
+# Manifest file for tracking progress
+manifest_file = os.path.join(out_dir, f"{type_}_{class_}_{chunk}_manifest.json")
 
 print(f"⚙️  Configuration:")
 print(f"   MHC Type:     {type_}")
@@ -113,22 +128,70 @@ print(f"   k-mer Length: {k_mer}")
 print(f"   Output Dir:   {out_dir}")
 print(f"   Batch Size:   {BATCH_SIZE}")
 print(f"   Workers:      {MAX_WORKERS}")
+print(f"   Max Rows/File: {MAX_ROWS_PER_FILE}")
+print(f"   Manifest:     {manifest_file}")
+
+
+# ===================================================
+# Manifest Management Functions
+# ===================================================
+def load_manifest(manifest_file):
+    """Load the manifest file that tracks processed files and output parts."""
+    if os.path.exists(manifest_file) and not args.force_reprocess:
+        with open(manifest_file, 'r') as f:
+            manifest_data = json.load(f)
+        return manifest_data
+    else:
+        return {
+            "processed_files": {},  # {filename: {"part": part_num, "timestamp": timestamp}}
+            "output_parts": {},      # {part_num: {"row_count": count, "files": [list of files]}}
+            "last_part": 0,
+            "total_rows": 0
+        }
+
+
+def save_manifest(manifest_file, manifest_data):
+    """Save the manifest file."""
+    with open(manifest_file, 'w') as f:
+        json.dump(manifest_data, f, indent=2)
+
+
+def get_next_output_file(out_dir, type_, class_, chunk, manifest_data):
+    """Determine the next output file to write to based on manifest."""
+    last_part = manifest_data["last_part"]
+    
+    # Check if we need a new part file
+    if last_part == 0:
+        # No files exist yet
+        next_part = 1
+        create_new = True
+    else:
+        # Check row count of last part
+        last_part_info = manifest_data["output_parts"].get(str(last_part), {})
+        row_count = last_part_info.get("row_count", 0)
+        
+        if row_count >= MAX_ROWS_PER_FILE:
+            # Current file is full, create new one
+            next_part = last_part + 1
+            create_new = True
+        else:
+            # Continue with current file
+            next_part = last_part
+            create_new = False
+    
+    chunk_suffix = f"_{chunk}" if chunk else ""
+    out_file = os.path.join(out_dir, f"{type_}_{class_}{chunk_suffix}_predictions_part{next_part:04d}.txt.gz")
+    
+    return out_file, next_part, create_new
 
 
 # ===================================================
 # Resume from Previously Processed Files
 # ===================================================
-processed_files = set()
-if os.path.exists(out_file):
-    prev = pd.read_csv(
-        out_file,
-        sep="\t",
-        usecols=["source_file_human_human"],
-        compression="gzip",
-        low_memory=False
-    )
-    processed_files = set(prev["source_file_human_human"].unique())
-    print(f"Found {len(processed_files)} processed files in {out_file}")
+# Load manifest to get previously processed files
+manifest_data = load_manifest(manifest_file)
+processed_files = set(manifest_data["processed_files"].keys())
+print(f"📊 Manifest: {len(processed_files)} files already processed")
 
 
 # ===================================================
@@ -229,21 +292,31 @@ if not unprocessed:
 
 
 # ===================================================
-# Parallel Execution with Batching and Gzip Writing
+# Parallel Execution with Batching and Split File Writing
 # ===================================================
 batch = []
+batch_files = []  # Track which files are in the current batch
 total_written = 0
+timestamp = datetime.now().isoformat()
 
 with concurrent.futures.ProcessPoolExecutor(max_workers=MAX_WORKERS) as exe:
     with tqdm(total=len(unprocessed), desc="Processing NetMHCpan chunks", dynamic_ncols=True) as pbar:
-        for result in exe.map(process_one, unprocessed, chunksize=100):
+        for xls_file, result in zip(unprocessed, exe.map(process_one, unprocessed, chunksize=100)):
             if result is not None:
                 batch.append(result)
+                batch_files.append(os.path.basename(xls_file))
 
                 # Write every BATCH_SIZE results
                 if len(batch) >= BATCH_SIZE:
                     df_batch = pd.concat(batch, ignore_index=True)
-                    header = not os.path.exists(out_file)
+                    
+                    # Get the appropriate output file (may create new part if needed)
+                    out_file, part_num, create_new = get_next_output_file(
+                        out_dir, type_, class_, chunk, manifest_data
+                    )
+                    
+                    # Write to file
+                    header = create_new or not os.path.exists(out_file)
                     df_batch.to_csv(
                         out_file,
                         sep="\t",
@@ -252,8 +325,36 @@ with concurrent.futures.ProcessPoolExecutor(max_workers=MAX_WORKERS) as exe:
                         header=header,
                         compression="gzip"
                     )
+                    
+                    # Update manifest
+                    for file_name in batch_files:
+                        manifest_data["processed_files"][file_name] = {
+                            "part": part_num,
+                            "timestamp": timestamp
+                        }
+                    
+                    # Update output part info
+                    part_key = str(part_num)
+                    if part_key not in manifest_data["output_parts"]:
+                        manifest_data["output_parts"][part_key] = {
+                            "row_count": 0,
+                            "files": []
+                        }
+                    
+                    manifest_data["output_parts"][part_key]["row_count"] += len(df_batch)
+                    manifest_data["output_parts"][part_key]["files"].extend(batch_files)
+                    manifest_data["last_part"] = part_num
+                    manifest_data["total_rows"] += len(df_batch)
+                    
                     total_written += len(df_batch)
+                    
+                    # Save manifest periodically
+                    save_manifest(manifest_file, manifest_data)
+                    
+                    print(f"\n💾 Batch written to part{part_num:04d} ({len(df_batch)} rows)")
+                    
                     batch.clear()  # Free memory after write
+                    batch_files.clear()
             pbar.update(1)
 
 
@@ -262,7 +363,13 @@ with concurrent.futures.ProcessPoolExecutor(max_workers=MAX_WORKERS) as exe:
 # ===================================================
 if batch:
     df_batch = pd.concat(batch, ignore_index=True)
-    header = not os.path.exists(out_file)
+    
+    # Get the appropriate output file
+    out_file, part_num, create_new = get_next_output_file(
+        out_dir, type_, class_, chunk, manifest_data
+    )
+    
+    header = create_new or not os.path.exists(out_file)
     df_batch.to_csv(
         out_file,
         sep="\t",
@@ -271,11 +378,53 @@ if batch:
         header=header,
         compression="gzip"
     )
+    
+    # Update manifest
+    for file_name in batch_files:
+        manifest_data["processed_files"][file_name] = {
+            "part": part_num,
+            "timestamp": timestamp
+        }
+    
+    # Update output part info
+    part_key = str(part_num)
+    if part_key not in manifest_data["output_parts"]:
+        manifest_data["output_parts"][part_key] = {
+            "row_count": 0,
+            "files": []
+        }
+    
+    manifest_data["output_parts"][part_key]["row_count"] += len(df_batch)
+    manifest_data["output_parts"][part_key]["files"].extend(batch_files)
+    manifest_data["last_part"] = part_num
+    manifest_data["total_rows"] += len(df_batch)
+    
     total_written += len(df_batch)
+    
+    # Save final manifest
+    save_manifest(manifest_file, manifest_data)
 
 
 # ===================================================
 # Summary and Completion Message
 # ===================================================
-print(f"All chunks processed and appended ({total_written:,} rows total).")
-print(f"Compressed output saved to: {out_file}")
+print(f"\n{'='*60}")
+print(f"✅ Processing Complete!")
+print(f"{'='*60}")
+print(f"   Total rows written: {total_written:,}")
+print(f"   Files processed: {len(manifest_data['processed_files'])}")
+print(f"   Output parts created: {len(manifest_data['output_parts'])}")
+print(f"   Manifest saved: {manifest_file}")
+
+# List output files
+output_files = sorted(glob.glob(os.path.join(out_dir, f"{type_}_{class_}*_predictions_part*.txt.gz")))
+if output_files:
+    print(f"\n📁 Output files:")
+    for of in output_files:
+        size_mb = os.path.getsize(of) / (1024 * 1024)
+        part_match = re.search(r'part(\d+)', of)
+        if part_match:
+            part_num = part_match.group(1)
+            part_info = manifest_data["output_parts"].get(part_num, {})
+            row_count = part_info.get("row_count", "unknown")
+            print(f"   {os.path.basename(of)}: {size_mb:.1f} MB, {int(row_count):,} rows")
