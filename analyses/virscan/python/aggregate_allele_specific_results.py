@@ -415,16 +415,3 @@ print(f"   Total rows written: {total_written:,}")
 print(f"   Files processed: {len(manifest_data['processed_files'])}")
 print(f"   Output parts created: {len(manifest_data['output_parts'])}")
 print(f"   Manifest saved: {manifest_file}")
-
-# List output files
-output_files = sorted(glob.glob(os.path.join(out_dir, f"{type_}_{class_}*_predictions_part*.txt.gz")))
-if output_files:
-    print(f"\n📁 Output files:")
-    for of in output_files:
-        size_mb = os.path.getsize(of) / (1024 * 1024)
-        part_match = re.search(r'part(\d+)', of)
-        if part_match:
-            part_num = part_match.group(1)
-            part_info = manifest_data["output_parts"].get(part_num, {})
-            row_count = part_info.get("row_count", "unknown")
-            print(f"   {os.path.basename(of)}: {size_mb:.1f} MB, {int(row_count):,} rows")

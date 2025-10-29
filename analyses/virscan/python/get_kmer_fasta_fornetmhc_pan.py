@@ -53,6 +53,7 @@ args = parser.parse_args()
 k = args.kmer
 chunk_size = args.chunk_size
 
+
 # ====================================================
 # File paths
 # ====================================================
@@ -63,6 +64,7 @@ out_dir = f"/ix/djishnu/Priyamvada/virauto/data/epitopes/virscan/paired_k_mers/{
 os.makedirs(out_dir, exist_ok=True)
 chunk_dir = os.path.join(out_dir, "chunks")
 os.makedirs(chunk_dir, exist_ok=True)
+dir_chunk_size = 50 # Number of chunk files per directory
 
 # ====================================================
 # Load BLAST hits
@@ -125,10 +127,17 @@ for _, row in blast_hits.iterrows():
 # ====================================================
 # Write chunked FASTA files
 # ====================================================
+file_count = (len(records) + chunk_size - 1) // chunk_size
+chunk_num = 0
 for i in range(0, len(records), chunk_size):
     chunk = records[i:i + chunk_size]
-    chunk_num = i // chunk_size + 1
-    output_file = os.path.join(chunk_dir, f"matched_pairs_chunk_{chunk_num}.fasta")
+    chunk_num += 1
+    # Determine which directory this chunk belongs to
+    dir_num = ((chunk_num - 1) // dir_chunk_size) + 1
+    dir_path = os.path.join(chunk_dir, f"chunk_{dir_num}")
+    os.makedirs(dir_path, exist_ok=True)
+    # Write the chunk file
+    output_file = os.path.join(dir_path, f"matched_pairs_chunk_{chunk_num}.fasta")
     SeqIO.write(chunk, output_file, "fasta")
     print(f"   [Chunk {chunk_num}] Wrote {len(chunk)} sequences → {output_file}")
 

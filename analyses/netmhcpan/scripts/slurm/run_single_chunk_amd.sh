@@ -16,7 +16,7 @@
 # Configuration
 TYPE="Type1_NR"
 CLASS="all"
-CHUNK='chunk_1'
+CHUNK='chunk_2'
 K_MER=9
 WORKERS=60                         # Slightly less than cores for overhead
 BATCH_SIZE=100                     # Large batch size with ample memory

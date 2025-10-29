@@ -66,7 +66,7 @@ print(hits.shape)
 
 hits['hu_prot_id'] = hits['sseqid'].str.split("|").str[1]
 
-hits = hits[hits['hu_prot_id'].isin(uniprot_df['hu_prot_id'])]
+hits = hits[~hits['hu_prot_id'].isin(uniprot_df['hu_prot_id'])]
 print(hits.shape)
 
 

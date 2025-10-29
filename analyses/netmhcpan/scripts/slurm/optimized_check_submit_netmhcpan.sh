@@ -11,11 +11,13 @@
 set -uo pipefail
 
 # --- Configuration ---
-PEPTIDE_DIR="/ix/djishnu/Priyamvada/virauto/data/epitopes/virscan/paired_k_mers/9_mers/split_chunks/chunk_6"
-ALLELE_CHUNK_DIR="/ix/djishnu/Priyamvada/virauto/data/HLA_alleles/Type1_NR_alleles/Type1_chunks"
-OUTDIR="/ix/djishnu/Priyamvada/virauto/results/netmhcpan/virscan/9_mers/Type1_NR/Type1_NR_all_chunks/chunk_6"
-LOG_DIR="/ix/djishnu/Priyamvada/virauto/analyses/netmhcpan/logs/Type1_NR_chunks/"
-JOB_OUT_DIR="/ix/djishnu/Priyamvada/virauto/analyses/netmhcpan/logs/Type1_NR_chunks/job_outputs"
+PEPTIDE_DIR="/ix/djishnu/Priyamvada/virauto/data/epitopes/virscan/paired_k_mers/9_mers/chunks/chunk_1"
+ALLELE_CHUNK_DIR="/ix/djishnu/Priyamvada/virauto/data/HLA_alleles/Class_I_NR/HLA-A_chunks"
+OUTDIR="/ix/djishnu/Priyamvada/virauto/results/netmhcpan/virscan/9_mers/Class_I_NR/Class_I_HLA-A/chunk_1"
+mkdir -p "$OUTDIR"
+LOG_DIR="/ix/djishnu/Priyamvada/virauto/analyses/netmhcpan/logs/Class_I_NR_chunks/HLA-A"
+JOB_OUT_DIR="/ix/djishnu/Priyamvada/virauto/analyses/netmhcpan/logs/Class_I_NR_chunks/HLA-A/chunk_1"
+mkdir -p "$JOB_OUT_DIR"
 
 
 # Job batching parameters
@@ -23,7 +25,7 @@ MAX_JOBS_PER_BATCH=100  # CRC cluster limit
 MAX_BATCHES_TO_SUBMIT=13  # Safety limit for initial run
 
 # Temporary directory for submission script 
-TMP_DIR_SUB="/ix/djishnu/Priyamvada/virauto/analyses/netmhcpan/logs/Type1_NR_chunks/tmp"
+TMP_DIR_SUB="/ix/djishnu/Priyamvada/virauto/analyses/netmhcpan/logs/Class_I_NR_chunks/tmp"
 
 # Temporary directory for job combinations
 COMBO_DIR="$TMP_DIR_SUB/netmhcpan_combos_$$"
@@ -84,10 +86,6 @@ TOTAL_COMBINATIONS=$((${#PEPTIDE_FILES[@]} * ${#ALLELE_CHUNKS[@]}))
 echo "  ✓ Total combinations: $TOTAL_COMBINATIONS"
 echo ""
 
-############################################################
-# STEP 2: ULTRA-OPTIMIZED CHECK FOR EXISTING OUTPUTS
-# Multiple strategies to speed up when many files exist
-############################################################
 ############################################################
 # STEP 2: ULTRA-OPTIMIZED CHECK FOR EXISTING OUTPUTS
 ############################################################
