@@ -29,7 +29,7 @@ import re
 # =============================================================================
 # 1. Configuration
 # =============================================================================
-BASE_PATH = "/ix/djishnu/Priyamvada/virauto/results/mimicry_analysis/virscan/Type1_NR_all/delta_binding/9_mers/"
+BASE_PATH = "/ix/djishnu/Priyamvada/virauto/results/mimicry_analysis/virscan/9_mers/Class_I/HLA-A/"
 DATASET_PATH = os.path.join(BASE_PATH, "data")
 OUT_DIR = os.path.join(BASE_PATH, "summaries")
 os.makedirs(OUT_DIR, exist_ok=True)

@@ -54,11 +54,11 @@ parser = argparse.ArgumentParser(
     description="Merge NetMHCpan predictions with paired viral–human FASTA metadata."
 )
 parser.add_argument(
-    "--type", dest="type_", required=True,
-    help="HLA cla (e.g., type1 or type2)"
+    "--class", dest="class_", required=True,
+    help="HLA class (e.g., Class_I or Class_II)"
 )
 parser.add_argument(
-    "--type", dest="type_", required=False, default="all",
+    "--hla_type", dest="hla_type_", required=False, default="all",
     help="HLA type (e.g., A, B, C, all)"
 )
 parser.add_argument(
@@ -95,8 +95,8 @@ parser.add_argument(
 )
 
 args = parser.parse_args()
-type_ = args.type_
 class_ = args.class_
+hla_type_ = f'HLA-{args.hla_type_}'
 k_mer = args.k_mer
 BATCH_SIZE = args.batch_size
 MAX_WORKERS = args.workers
@@ -110,19 +110,19 @@ chunk = args.chunk
 # Configuration and Directory Setup
 # ===================================================
 if chunk:
-    netmhc_dir = f"{base_results}/{k_mer}_mers/{type_}/{type_}_{class_}_chunks/{chunk}"
+    netmhc_dir = f"{base_results}/{k_mer}_mers/{class_}/{hla_type_}/{chunk}"
 else:
-    netmhc_dir = f"{base_results}/{k_mer}_mers/{type_}/{type_}_{class_}_chunks"
+    netmhc_dir = f"{base_results}/{k_mer}_mers/{class_}/{hla_type_}"
     
-fasta_dir = f"{base_data}/paired_k_mers/{k_mer}_mers/chunks"
-out_dir = f"{base_results}/{k_mer}_mers/{type_}/{type_}_processed"
+fasta_dir = f"{base_data}/paired_k_mers/{k_mer}_mers/chunks/{chunk}"
+out_dir = f"{base_results}/{k_mer}_mers/{class_}/{hla_type_}_processed"
 os.makedirs(out_dir, exist_ok=True)
 
 # Manifest file for tracking progress
-manifest_file = os.path.join(out_dir, f"{type_}_{class_}_{chunk}_manifest.json")
+manifest_file = os.path.join(out_dir, f"{hla_type_}_{chunk}_manifest.json")
 
 print(f"⚙️  Configuration:")
-print(f"   MHC Type:     {type_}")
+print(f"   MHC Type:     {hla_type_}")
 print(f"   MHC Class:    {class_}")
 print(f"   k-mer Length: {k_mer}")
 print(f"   Output Dir:   {out_dir}")
@@ -156,7 +156,7 @@ def save_manifest(manifest_file, manifest_data):
         json.dump(manifest_data, f, indent=2)
 
 
-def get_next_output_file(out_dir, type_, class_, chunk, manifest_data):
+def get_next_output_file(out_dir, hla_type_, class_, chunk, manifest_data):
     """Determine the next output file to write to based on manifest."""
     last_part = manifest_data["last_part"]
     
@@ -180,7 +180,7 @@ def get_next_output_file(out_dir, type_, class_, chunk, manifest_data):
             create_new = False
     
     chunk_suffix = f"_{chunk}" if chunk else ""
-    out_file = os.path.join(out_dir, f"{type_}_{class_}{chunk_suffix}_predictions_part{next_part:04d}.txt.gz")
+    out_file = os.path.join(out_dir, f"{hla_type_}{chunk_suffix}_predictions_part{next_part:04d}.txt.gz")
     
     return out_file, next_part, create_new
 
@@ -312,7 +312,7 @@ with concurrent.futures.ProcessPoolExecutor(max_workers=MAX_WORKERS) as exe:
                     
                     # Get the appropriate output file (may create new part if needed)
                     out_file, part_num, create_new = get_next_output_file(
-                        out_dir, type_, class_, chunk, manifest_data
+                        out_dir, hla_type_, class_, chunk, manifest_data
                     )
                     
                     # Write to file
@@ -366,7 +366,7 @@ if batch:
     
     # Get the appropriate output file
     out_file, part_num, create_new = get_next_output_file(
-        out_dir, type_, class_, chunk, manifest_data
+        out_dir, hla_type_, class_, chunk, manifest_data
     )
     
     header = create_new or not os.path.exists(out_file)

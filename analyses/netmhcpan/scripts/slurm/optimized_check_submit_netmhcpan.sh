@@ -12,11 +12,11 @@ set -uo pipefail
 
 # --- Configuration ---
 PEPTIDE_DIR="/ix/djishnu/Priyamvada/virauto/data/epitopes/virscan/paired_k_mers/9_mers/chunks/chunk_1"
-ALLELE_CHUNK_DIR="/ix/djishnu/Priyamvada/virauto/data/HLA_alleles/Class_I_NR/HLA-A_chunks"
-OUTDIR="/ix/djishnu/Priyamvada/virauto/results/netmhcpan/virscan/9_mers/Class_I_NR/Class_I_HLA-A/chunk_1"
+ALLELE_CHUNK_DIR="/ix/djishnu/Priyamvada/virauto/data/HLA_alleles/Class_I_NR/HLA-B_chunks"
+OUTDIR="/ix/djishnu/Priyamvada/virauto/results/netmhcpan/virscan/9_mers/Class_I/HLA-B/chunk_1"
 mkdir -p "$OUTDIR"
-LOG_DIR="/ix/djishnu/Priyamvada/virauto/analyses/netmhcpan/logs/Class_I_NR_chunks/HLA-A"
-JOB_OUT_DIR="/ix/djishnu/Priyamvada/virauto/analyses/netmhcpan/logs/Class_I_NR_chunks/HLA-A/chunk_1"
+LOG_DIR="/ix/djishnu/Priyamvada/virauto/analyses/netmhcpan/logs/Class_I_NR_chunks/HLA-B"
+JOB_OUT_DIR="/ix/djishnu/Priyamvada/virauto/analyses/netmhcpan/logs/Class_I_NR_chunks/HLA-B/chunk_1"
 mkdir -p "$JOB_OUT_DIR"
 
 

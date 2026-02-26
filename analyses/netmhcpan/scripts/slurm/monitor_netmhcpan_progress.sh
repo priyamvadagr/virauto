@@ -6,10 +6,10 @@
 ############################################################
 
 # === PATHS (update if you change your submission script) ===
-OUTDIR="/ix/djishnu/Priyamvada/virauto/results/netmhcpan/virscan/9_mers/Type1_NR/Type1_NR_all_chunks/chunk_6"
-PEPTIDE_DIR="/ix/djishnu/Priyamvada/virauto/data/epitopes/virscan/paired_k_mers/9_mers/split_chunks/chunk_6"
-ALLELE_CHUNK_DIR="/ix/djishnu/Priyamvada/virauto/data/HLA_alleles/Type1_NR_alleles/Type1_chunks"
-LOG_DIR="/ix/djishnu/Priyamvada/virauto/analyses/netmhcpan/logs/Type1_NR_chunks/tmp"
+PEPTIDE_DIR="/ix/djishnu/Priyamvada/virauto/data/epitopes/virscan/paired_k_mers/9_mers/chunks/chunk_5"
+ALLELE_CHUNK_DIR="/ix/djishnu/Priyamvada/virauto/data/HLA_alleles/Class_I_NR/HLA-A_chunks"
+OUTDIR="/ix/djishnu/Priyamvada/virauto/results/netmhcpan/virscan/9_mers/Class_I/HLA-A/chunk_5"
+LOG_DIR="/ix/djishnu/Priyamvada/virauto/analyses/netmhcpan/logs/Class_I_NR_chunks/HLA-A"
 
 # === Colors ===
 GREEN='\033[0;32m'

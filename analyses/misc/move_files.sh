@@ -10,8 +10,8 @@
 echo "Starting file copy at $(date)"
 echo "Host: $(hostname)"
 
-SRC="/ix/djishnu/Priyamvada/virauto/results/netmhcpan/virscan/9_mers/Type1_NR/All_types"
-DEST="/ix/djishnu/Priyamvada/virauto/results/netmhcpan/virscan/9_mers/Type1_NR/All_types_chunks/chunk_1"
+SRC="/ix/djishnu/Tracy/AutoimmuneInfectious/results/netmhcpan/virscan/9_mers/Class_I/HLA-A/chunk_10"
+DEST="/ix/djishnu/Priyamvada/virauto/results/netmhcpan/virscan/9_mers/Class_I/HLA-A/chunk_10"
 
 mkdir -p "$DEST"
 

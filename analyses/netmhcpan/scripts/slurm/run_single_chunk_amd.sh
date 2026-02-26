@@ -13,13 +13,18 @@
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=prg65@pitt.edu
 
+source activate /ix/djishnu/Priyamvada/envs/virauto
+
 # Configuration
-TYPE="Type1_NR"
-CLASS="all"
-CHUNK='chunk_2'
+TYPE="A"
+CLASS="Class_I"
+CHUNK='chunk_10'
 K_MER=9
 WORKERS=60                         # Slightly less than cores for overhead
 BATCH_SIZE=100                     # Large batch size with ample memory
+RESULT_DIR="/ix/djishnu/Priyamvada/virauto/results/netmhcpan/virscan"
+
+
 
 # Directory for all logs
 LOGDIR="/ix/djishnu/Priyamvada/virauto/analyses/virscan/logs"
@@ -44,12 +49,13 @@ echo "Chunk:         $CHUNK"
 echo "Started at:    $(date)"
 echo "=================================================="
 
-python /ix/djishnu/Priyamvada/virauto/analyses/virscan/python/aggregate_allele_specific_results.py \
-    --type $TYPE \
+python /ix/djishnu/Priyamvada/virauto/analyses/netmhcpan/scripts/python/aggregate_allele_specific_results.py \
+    --hla_type $TYPE \
     --class $CLASS \
     --chunk $CHUNK \
     --kmer $K_MER \
     --workers $WORKERS \
+    --results_dir $RESULT_DIR \
     --batch_size $BATCH_SIZE
 
 echo "=================================================="

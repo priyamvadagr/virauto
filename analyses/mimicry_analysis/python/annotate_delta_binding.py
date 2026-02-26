@@ -23,12 +23,12 @@ Quantitative thresholds:
     - Affinity similarity: 
         |ΔBA_score| ≤ 0.5  (log-scale window)
 CLI Arguments:
-    --type   : MHC binding type (e.g., type1, type2)
-    --class  : MHC class letter (e.g., A, B, C)
+    --class   : HLA class (e.g., Class_I or Class_II)
+    --type  : MHC type (e.g., A, B, C)
     --kmer   : Peptide length (e.g., 8, 9, 10)
 
 Example Usage:
-    python merge_netmhcpan_predictions.py --type type1 --class B --kmer 9
+    python merge_netmhcpan_predictions.py --type A --class I --kmer 9
 ======================================================================
 """
 #!/usr/bin/env python3
@@ -59,9 +59,17 @@ parser.add_argument(
     "--class",
     dest="class_",
     type=str,
+    required=True,
+    default="Class_I",
+    help="MHC class letter (e.g., Class_I or Class_II). Default: Class_I"
+)
+
+parser.add_argument(
+    "--hla_type",
+    dest="hla_type_",
+    type=str,
     required=False,
-    default="Type_1_NR_all",
-    help="MHC class letter (e.g., type I or type II). Default: type 1 NR all"
+    help="MHC class letter (e.g., A, B, or C)"
 )
 
 parser.add_argument(
@@ -73,14 +81,14 @@ parser.add_argument(
 )
 
 parser.add_argument(
-    "--data_dir",
+    "--netmhc_dir",
     type=str,
-    default="/ix/djishnu/Priyamvada/virauto/results/netmhcpan/virscan/9_mers/Type1_NR/Type1_NR_processed",
+    default="/ix/djishnu/Priyamvada/virauto/results/netmhcpan/virscan/",
     help="Path to the directory containing chunked NetMHCpan prediction files."
 )
 
 parser.add_argument(
-    "--results_dir",
+    "--out_dir",
     type=str,
     default="/ix/djishnu/Priyamvada/virauto/results/mimicry_analysis/",
     help="Output directory for aggregated results."
@@ -99,14 +107,30 @@ parser.add_argument(
     help="Reprocess all files even if they appear in the processed manifest."
 )
 
+parser.add_argument(
+    "--workers",
+    type=int,
+    default=4,
+    help="Number of parallel workers to use."
+)
+
 args = parser.parse_args()
+hla_class = args.class_
+hla_type = f'HLA-{args.hla_type_}'
+k_mer = f'{args.k_mer}_mers'
+BATCH_SIZE = args.batch_size
+MAX_WORKERS = args.workers
+base_results = args.out_dir
+netmhc_dir = args.netmhc_dir
+
 
 
 # ===================================================
 # Setup
 # ===================================================
-data_dir = args.data_dir
-out_dir = os.path.join(args.results_dir, f"{args.k_mer}_mers")
+data_dir = os.path.join(netmhc_dir, f"{k_mer}/{hla_class}/{hla_type}_processed")
+print(f"Input data directory: {data_dir}")
+out_dir = os.path.join(base_results, f"{k_mer}/{hla_class}/{hla_type}")
 os.makedirs(os.path.join(out_dir, "data"), exist_ok=True)
 manifest_file = os.path.join(out_dir, "processed_manifest.txt")
 
@@ -115,7 +139,7 @@ if os.path.exists(manifest_file) and not args.force_reprocess:
     with open(manifest_file) as f:
         processed = set(line.strip() for line in f)
 
-pattern = os.path.join(data_dir, f"{args.class_}_*_predictions_part*.txt.gz")
+pattern = os.path.join(data_dir, f"{hla_type}_*_predictions_part*.txt.gz")
 files = sorted(glob.glob(pattern))
 files_to_process = [f for f in files if f not in processed]
 print(f"Found {len(files_to_process)} new files to process")
