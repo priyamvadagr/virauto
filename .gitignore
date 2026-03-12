@@ -29,6 +29,7 @@ results/*
 # Logs / SLURM
 logs/*
 **/logs/
+*.log
 *.out
 *.err
 slurm-*
@@ -46,3 +47,6 @@ tmp/*
 
 #DecoderTCR
 analyses/embeddings/DecoderTCR/
+
+ 
+
