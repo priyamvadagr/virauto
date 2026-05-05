@@ -44,7 +44,7 @@ for record in SeqIO.parse(fasta_file, "fasta"):
     seq_len = len(seq)
 
     row = {
-        "protein_id": protein_id,
+        "hu_prot_id": protein_id,
         "entry_name": entry_name,
         "description": record.description,
         "length": seq_len

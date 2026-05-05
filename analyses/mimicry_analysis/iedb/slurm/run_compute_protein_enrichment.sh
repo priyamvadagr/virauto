@@ -13,6 +13,6 @@ source activate /ix/djishnu/Priyamvada/envs/virauto
 
 
 python /ix/djishnu/Priyamvada/virauto/analyses/mimicry_analysis/iedb/python/compute_protein_enrichment.py \
-        --mimetopes /ix/djishnu/Priyamvada/virauto/results/mimicry_analysis/iedb/mhc_i/ORA_protein_enrichment/mimetopes_per_protein.tsv \
-        --outdir /ix/djishnu/Priyamvada/virauto/results/mimicry_analysis/iedb/mhc_i/ORA_protein_enrichment/ \
+        --mimetopes /ix/djishnu/Priyamvada/virauto/results/mimicry_analysis/iedb/mhc_i/swissprot/ORA_protein_enrichment/mimetopes_per_protein.tsv \
+        --outdir /ix/djishnu/Priyamvada/virauto/results/mimicry_analysis/iedb/mhc_i/swissprot/ORA_protein_enrichment/ \
         --fdr 0.05

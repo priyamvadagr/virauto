@@ -1,19 +1,23 @@
 #!/usr/bin/env python3
 """
 ======================================================================
-Script: filter_iedb_blast_hits.py
+Script: filter_iedb_mhcii_blast_hits.py
 Description:
-    Filter BLAST results from IEDB MHC-I or MHC-II epitopes vs human proteome.
-    Extract human mimic subsequences and prepare for NetMHCpan.
+    Filter BLAST results from IEDB MHC-II epitopes vs human proteome.
+    Extract human mimic subsequences and prepare for NetMHCIIpan.
+
+    Human mimic sequences are padded with flanking residues from the
+    source protein to match the viral epitope length (minimum 15 aa),
+    ensuring reliable NetMHCIIpan predictions.
 
 Filtering steps:
-    1. Coverage: alignment must cover >= 80% of epitope length
-    2. Mismatches: 1-3 mismatches (removes identical and very distant)
-    3. Remove deprecated UniProt IDs
-    4. Remove self-hits (human protein that IS the epitope source)
+    1. Epitope length: >= 15 aa (Class II standard)
+    2. Coverage: alignment must cover >= 80% of epitope length
+    3. Mismatches: 1 to qlen//3 mismatches
+    4. Remove deprecated UniProt IDs
     5. Remove hits to immunoglobulin/TCR/MHC proteins
-    6. Extract human mimic subsequences
-    7. Parse MHC allele from query header for downstream NetMHCpan
+    6. Extract human mimic subsequences (padded to viral epitope length)
+    7. Parse MHC allele from query header for downstream NetMHCIIpan
 
 Input FASTA header format (from merge script):
     >structure_id|sequence|organism|mhc_allele
@@ -22,7 +26,7 @@ Dependencies:
     pandas, biopython
 
 Usage:
-    python filter_iedb_blast_hits.py
+    python filter_iedb_mhcii_blast_hits.py
 ======================================================================
 """
 
@@ -36,16 +40,22 @@ import re
 # ====================================================
 # Config
 # ====================================================
-BLAST_FILE = "/ix/djishnu/Priyamvada/virauto/data/epitopes/iedb/blast/iedb_mhc_ii_vs_human_proteome.tsv"
-HUMAN_FASTA = "/ix/djishnu/Priyamvada/virauto/data/refs/uniprot/uniprot_human_all.fasta"
+BLAST_FILE = "/ix/djishnu/Priyamvada/virauto/data/epitopes/iedb/blast/mhc_ii/iedb_mhc_ii_vs_human_proteome.tsv"
+HUMAN_FASTA = "/ix/djishnu/Priyamvada/virauto/data/refs/uniprot/uniprot_human_sprot.fasta"
 UNIPROT_FILTER = "/ix/djishnu/Priyamvada/virauto/data/refs/uniprot/proteins_to_remove_from_UniProtKB.txt"
 
-OUT_DIR = "/ix/djishnu/Priyamvada/virauto/data/epitopes/iedb/blast"
+OUT_DIR = "/ix/djishnu/Priyamvada/virauto/data/epitopes/iedb/blast/mhc_ii"
 os.makedirs(OUT_DIR, exist_ok=True)
 
 OUT_CSV = os.path.join(OUT_DIR, "iedb_mhc_ii_filtered_blast_hits.csv.gz")
 OUT_FASTA = os.path.join(OUT_DIR, "iedb_mhc_ii_human_mimic_seqs.fasta")
 OUT_NETMHCPAN = os.path.join(OUT_DIR, "iedb_mhc_ii_pairs_for_netmhcpan.csv.gz")
+
+# Minimum epitope length for Class II
+MIN_EPITOPE_LEN = 15
+
+# Minimum human mimic length after padding (NetMHCIIpan default)
+MIN_MIMIC_LEN = 15
 
 # Mismatch range
 MIN_MISMATCHES = 1  # exclude identical (0 mismatches)
@@ -54,7 +64,6 @@ MIN_MISMATCHES = 1  # exclude identical (0 mismatches)
 MIN_COVERAGE = 0.80
 
 # Proteins to exclude (immunoglobulins, TCRs, MHC molecules)
-# These contain peptide-binding regions that spuriously match epitopes
 EXCLUDE_PATTERNS = [
     r"HLA-",
     r"histocompatibility",
@@ -85,9 +94,7 @@ def load_blast_results(filepath):
 # Step 2: Parse query header fields
 # ====================================================
 def parse_query_headers(df):
-    """
-    Parse FASTA header: structure_id|sequence|organism|mhc_allele
-    """
+    """Parse FASTA header: structure_id|sequence|organism|mhc_allele"""
     print(f"\n{'=' * 60}")
     print("Step 2: Parsing query headers")
     print("=" * 60)
@@ -99,12 +106,9 @@ def parse_query_headers(df):
     df["source_organism"] = parts[2].str.replace("_", " ") if 2 in parts.columns else None
     df["mhc_allele"] = parts[3].str.replace("_", " ") if 3 in parts.columns else None
 
-    # Parse human protein UniProt ID from subject
     df["hu_prot_id"] = df["sseqid"].apply(
         lambda x: x.split("|")[1] if "|" in str(x) else str(x)
     )
-
-    # Get human protein name if available (third field in UniProt header)
     df["hu_prot_name"] = df["sseqid"].apply(
         lambda x: x.split("|")[2] if str(x).count("|") >= 2 else ""
     )
@@ -126,22 +130,23 @@ def apply_filters(df):
 
     n_start = len(df)
 
-    # --- 3a: Coverage filter ---
-    df["coverage"] = df["length"] / df["qlen"]
-    df = df[df["coverage"] >= MIN_COVERAGE]
-    print(f"  After coverage >= {MIN_COVERAGE:.0%}: {len(df):,} "
+    # --- 3a: Epitope length filter ---
+    df = df[df["qlen"] >= MIN_EPITOPE_LEN]
+    print(f"  After epitope length >= {MIN_EPITOPE_LEN}: {len(df):,} "
           f"(removed {n_start - len(df):,})")
     n_prev = len(df)
 
-    # --- 3b: Mismatch filter ---
-    # pident = (identical / alignment_length) * 100
-    # identical = pident * alignment_length / 100
-    # mismatches = alignment_length - identical
+    # --- 3b: Coverage filter ---
+    df = df.copy()
+    df["coverage"] = df["length"] / df["qlen"]
+    df = df[df["coverage"] >= MIN_COVERAGE]
+    print(f"  After coverage >= {MIN_COVERAGE:.0%}: {len(df):,} "
+          f"(removed {n_prev - len(df):,})")
+    n_prev = len(df)
+
+    # --- 3c: Mismatch filter ---
     df["n_identical"] = (df["pident"] * df["length"] / 100).round().astype(int)
     df["n_mismatches"] = df["length"] - df["n_identical"]
-
-    # Scale max mismatches by epitope length: allow up to ~33% mismatches
-    # qlen // 3 gives: 9-mer→3, 10-mer→3, 11-mer→3, 12-mer→4, 13-mer→4, 14-mer→4
     df["max_mismatches"] = df["qlen"] // 3
 
     df = df[
@@ -152,7 +157,7 @@ def apply_filters(df):
           f"(removed {n_prev - len(df):,})")
     n_prev = len(df)
 
-    # --- 3c: Remove deprecated UniProt IDs ---
+    # --- 3d: Remove deprecated UniProt IDs ---
     if os.path.exists(UNIPROT_FILTER):
         deprecated = pd.read_csv(UNIPROT_FILTER, sep="\t", names=["hu_prot_id"])
         df = df[~df["hu_prot_id"].isin(deprecated["hu_prot_id"])]
@@ -162,7 +167,7 @@ def apply_filters(df):
     else:
         print(f"  ⚠️ UniProt filter file not found, skipping")
 
-    # --- 3d: Remove immune system proteins ---
+    # --- 3e: Remove immune system proteins ---
     exclude_regex = "|".join(EXCLUDE_PATTERNS)
     immune_mask = df["hu_prot_name"].str.contains(
         exclude_regex, case=False, regex=True, na=False
@@ -171,17 +176,6 @@ def apply_filters(df):
     df = df[~immune_mask]
     print(f"  After removing immune proteins (IG/TCR/MHC): {len(df):,} "
           f"(removed {n_immune:,})")
-    n_prev = len(df)
-
-    # --- 3e: Remove self-hits (identical sequences) ---
-    # Already handled by MIN_MISMATCHES >= 1, but also check if 
-    # the human hit IS the viral epitope sequence somehow
-    self_hit_mask = df.apply(
-        lambda row: str(row.get("viral_sequence", "")).upper() ==
-        str(row.get("viral_sequence", "")).upper() and
-        row.get("n_mismatches", 1) == 0, axis=1
-    )
-    # This is redundant given mismatch filter but safe to include
 
     # --- Summary ---
     print(f"\n  Mismatch distribution in filtered hits:")
@@ -201,11 +195,12 @@ def apply_filters(df):
 
 
 # ====================================================
-# Step 4: Extract human mimic subsequences
+# Step 4: Extract human mimic subsequences (with padding)
 # ====================================================
 def extract_human_sequences(df, human_fasta):
     print(f"\n{'=' * 60}")
     print("Step 4: Extracting human mimic subsequences")
+    print(f"  Padding: human mimics padded to max(viral_len, {MIN_MIMIC_LEN})")
     print("=" * 60)
 
     # Load human proteome
@@ -216,10 +211,13 @@ def extract_human_sequences(df, human_fasta):
         seq_dict[acc] = rec
     print(f"  Loaded {len(seq_dict):,} human proteins")
 
-    # Extract aligned subsequences
+    # Extract and pad subsequences
     records = []
     human_seqs = []
+    padded_starts = []
+    padded_ends = []
     not_found = 0
+    n_padded = 0
 
     for _, row in df.iterrows():
         prot_id = row["hu_prot_id"]
@@ -227,20 +225,48 @@ def extract_human_sequences(df, human_fasta):
         if prot_id not in seq_dict:
             not_found += 1
             human_seqs.append(None)
+            padded_starts.append(None)
+            padded_ends.append(None)
             continue
 
         full_seq = seq_dict[prot_id].seq
+        prot_len = len(full_seq)
         start, end = int(row["sstart"]), int(row["send"])
 
-        if start <= end:
-            subseq = str(full_seq[start - 1:end])
-        else:
-            # Shouldn't happen with proteins but handle gracefully
-            subseq = str(full_seq[end - 1:start])
+        # Ensure start <= end
+        if start > end:
+            start, end = end, start
 
+        aligned_len = end - start + 1
+        viral_len = len(str(row["viral_sequence"]))
+        target_len = max(viral_len, MIN_MIMIC_LEN)
+
+        # Pad symmetrically if needed
+        if aligned_len < target_len:
+            pad_needed = target_len - aligned_len
+            pad_left = pad_needed // 2
+            pad_right = pad_needed - pad_left
+
+            new_start = start - pad_left
+            new_end = end + pad_right
+
+            # Clamp to protein boundaries and rebalance
+            if new_start < 1:
+                new_end = min(prot_len, new_end + (1 - new_start))
+                new_start = 1
+            if new_end > prot_len:
+                new_start = max(1, new_start - (new_end - prot_len))
+                new_end = prot_len
+
+            start, end = new_start, new_end
+            n_padded += 1
+
+        subseq = str(full_seq[start - 1:end])
         human_seqs.append(subseq)
+        padded_starts.append(start)
+        padded_ends.append(end)
 
-        # FASTA record for the human mimic
+        # FASTA record
         header = (
             f"{row['structure_id']}"
             f"|VIRAL_{row['viral_sequence']}"
@@ -252,6 +278,8 @@ def extract_human_sequences(df, human_fasta):
         records.append(SeqRecord(Seq(subseq), id=header, description=""))
 
     df["human_mimic_sequence"] = human_seqs
+    df["padded_sstart"] = padded_starts
+    df["padded_send"] = padded_ends
 
     if not_found > 0:
         print(f"  ⚠️ {not_found} proteins not found in FASTA")
@@ -259,39 +287,44 @@ def extract_human_sequences(df, human_fasta):
     # Remove rows where we couldn't extract the sequence
     df = df[df["human_mimic_sequence"].notna()]
 
+    # Length diagnostics
+    mimic_lens = df["human_mimic_sequence"].str.len()
+    print(f"\n  Padding summary:")
+    print(f"    Sequences padded: {n_padded:,} / {len(df):,}")
+    print(f"    Human mimic length range: {mimic_lens.min()}-{mimic_lens.max()}")
+    print(f"    Mimics < {MIN_MIMIC_LEN} aa after padding: "
+          f"{(mimic_lens < MIN_MIMIC_LEN).sum()}")
+    print(f"\n  Human mimic length distribution:")
+    print(mimic_lens.value_counts().sort_index().to_string())
+
     # Write FASTA
     SeqIO.write(records, OUT_FASTA, "fasta")
-    print(f"  ✅ Extracted {len(records):,} human mimic sequences → {OUT_FASTA}")
+    print(f"\n  ✅ Extracted {len(records):,} human mimic sequences → {OUT_FASTA}")
 
     return df
 
 
 # ====================================================
-# Step 5: Prepare NetMHCpan input
+# Step 5: Prepare NetMHCIIpan input
 # ====================================================
 def prepare_netmhcpan(df):
-    """
-    Create a table of viral-human pairs with MHC alleles for NetMHCpan.
-    Only include pairs where MHC allele is at 4-digit resolution.
-    """
+    """Create a table of viral-human pairs with MHC alleles for NetMHCIIpan."""
     print(f"\n{'=' * 60}")
-    print("Step 5: Preparing NetMHCpan input")
+    print("Step 5: Preparing NetMHCIIpan input")
     print("=" * 60)
 
-    # Keep relevant columns for NetMHCpan
     netmhcpan_cols = [
         "structure_id", "viral_sequence", "human_mimic_sequence",
         "hu_prot_id", "hu_prot_name", "source_organism", "mhc_allele",
         "n_mismatches", "n_identical", "pident", "coverage",
-        "sstart", "send", "qlen"
+        "sstart", "send", "padded_sstart", "padded_send", "qlen"
     ]
     netmhcpan_df = df[[c for c in netmhcpan_cols if c in df.columns]].copy()
 
     # Classify MHC allele resolution
-    # 4-digit: HLA-A*02:01, HLA-B*35:01
-    # Low-res: HLA-A2, HLA-DR, human
+    # Matches any HLA allele with *XX:XX pattern
     four_digit = netmhcpan_df["mhc_allele"].str.contains(
-        r"HLA-[ABC]\*\d{2}:\d{2}", regex=True, na=False
+        r"\*\d{2}:\d{2}", regex=True, na=False
     )
     netmhcpan_df["mhc_4digit"] = four_digit
 
@@ -308,11 +341,11 @@ def prepare_netmhcpan(df):
 
     # Save full table
     netmhcpan_df.to_csv(OUT_NETMHCPAN, index=False, compression="gzip")
-    print(f"\n  ✅ NetMHCpan input table: {len(netmhcpan_df):,} pairs → {OUT_NETMHCPAN}")
+    print(f"\n  ✅ NetMHCIIpan input table: {len(netmhcpan_df):,} pairs → {OUT_NETMHCPAN}")
 
     # Also save 4-digit-only subset
     if n_4digit > 0:
-        four_digit_path = os.path.join(OUT_DIR, "iedb_mhci_pairs_4digit_hla.csv.gz")
+        four_digit_path = os.path.join(OUT_DIR, "iedb_mhcii_pairs_4digit_hla.csv.gz")
         netmhcpan_df[four_digit].to_csv(four_digit_path, index=False, compression="gzip")
         print(f"  ✅ 4-digit HLA subset: {n_4digit:,} pairs → {four_digit_path}")
 
@@ -349,15 +382,15 @@ def print_summary(df, netmhcpan_df):
 
     if "mhc_4digit" in netmhcpan_df.columns:
         ready = netmhcpan_df["mhc_4digit"].sum()
-        print(f"\n  Ready for NetMHCpan (4-digit HLA): {ready:,} pairs")
+        print(f"\n  Ready for NetMHCIIpan (4-digit HLA): {ready:,} pairs")
 
     print(f"\n  Output files:")
     print(f"    Filtered hits: {OUT_CSV}")
     print(f"    Human mimic FASTA: {OUT_FASTA}")
-    print(f"    NetMHCpan input: {OUT_NETMHCPAN}")
+    print(f"    NetMHCIIpan input: {OUT_NETMHCPAN}")
 
     print(f"\n  Next steps:")
-    print(f"    1. Run NetMHCpan on human mimics using paired HLA alleles")
+    print(f"    1. Run NetMHCIIpan on human mimics using paired HLA alleles")
     print(f"    2. Compute ΔBA (viral vs human binding affinity)")
     print(f"    3. Categorize: viral-dominant / human-dominant / equivalent")
     print(f"    4. Cross-reference with TCR data for DecoderTCR analysis")
@@ -368,8 +401,9 @@ def print_summary(df, netmhcpan_df):
 # ====================================================
 if __name__ == "__main__":
     print("=" * 60)
-    print("Filter IEDB MHC-I BLAST hits")
+    print("Filter IEDB MHC-II BLAST hits")
     print("Extract human molecular mimicry candidates")
+    print("  (with flanking-residue padding for NetMHCIIpan)")
     print("=" * 60)
 
     # Step 1: Load
@@ -385,14 +419,14 @@ if __name__ == "__main__":
         print("\n❌ No hits survived filtering.")
         exit(1)
 
-    # Step 4: Extract human sequences
+    # Step 4: Extract human sequences (with padding)
     df = extract_human_sequences(df, HUMAN_FASTA)
 
     # Step 5: Save filtered hits
     print(f"\n  ✅ Filtered hits saved → {OUT_CSV}")
     df.to_csv(OUT_CSV, index=False, compression="gzip")
 
-    # Step 6: Prepare NetMHCpan input
+    # Step 6: Prepare NetMHCIIpan input
     netmhcpan_df = prepare_netmhcpan(df)
 
     # Step 7: Summary

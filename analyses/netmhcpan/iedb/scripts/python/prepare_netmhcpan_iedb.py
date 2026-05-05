@@ -41,15 +41,15 @@ import string
 # ====================================================
 # Config
 # ====================================================
-INPUT_FILE = "/ix/djishnu/Priyamvada/virauto/data/epitopes/iedb/blast/iedb_mhci_pairs_4digit_hla.csv.gz"
+INPUT_FILE = "/ix/djishnu/Priyamvada/virauto/data/epitopes/iedb/blast/iedb_mhci_pairs_4digit_hla_swissprot.csv.gz"
 
 BASE_DIR = "/ix/djishnu/Priyamvada/virauto"
-FASTA_DIR = os.path.join(BASE_DIR, "data/epitopes/iedb/netmhcpan/mhc_i/fasta_by_allele")
+FASTA_DIR = os.path.join(BASE_DIR, "data/epitopes/iedb/netmhcpan/mhc_i/swissprot/fasta_by_allele")
 SCRIPT_DIR = os.path.join(BASE_DIR, "analyses/netmhcpan/iedb/scripts")
-RESULT_DIR = os.path.join(BASE_DIR, "results/netmhcpan/iedb/mhc_i")
+RESULT_DIR = os.path.join(BASE_DIR, "results/netmhcpan/iedb/mhc_i/swissprot")
 LOG_DIR = os.path.join(BASE_DIR, "logs")
-PAIR_ID_MAP_FILE = os.path.join(BASE_DIR, "data/epitopes/iedb/netmhcpan/mhc_i/pair_id_mapping.csv.gz")
-MANIFEST_FILE = os.path.join(BASE_DIR, "data/epitopes/iedb/netmhcpan/mhc_i/allele_manifest.tsv")
+PAIR_ID_MAP_FILE = os.path.join(BASE_DIR, "data/epitopes/iedb/netmhcpan/mhc_i/swissprot/pair_id_mapping.csv.gz")
+MANIFEST_FILE = os.path.join(BASE_DIR, "data/epitopes/iedb/netmhcpan/mhc_i/swissprot/allele_manifest.tsv")
 SUBMIT_SCRIPT = os.path.join(SCRIPT_DIR, "slurm/submit_netmhcpan_iedb.sh")
 
 for d in [FASTA_DIR, SCRIPT_DIR, RESULT_DIR, LOG_DIR]:

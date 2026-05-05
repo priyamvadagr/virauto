@@ -9,7 +9,7 @@
 #SBATCH --mail-user=prg65@pitt.edu
 
 # ============================================================
-# BLAST IEDB MHC Class I epitopes against the human proteome
+# BLAST IEDB MHC Class II epitopes against the human proteome
 #
 # These are short peptides (8-14 aa), so we use settings 
 # optimized for short query sequences:
@@ -45,15 +45,15 @@
 
 module load blast-plus/2.14.1
 
-QUERY="/ix/djishnu/Priyamvada/virauto/data/epitopes/iedb/fasta/iedb_epitopes_mhc_ii.fasta"
-DB="/ix/djishnu/Priyamvada/virauto/data/refs/blastdb/uniprot_human_all/uniprot_human_all_db"
-OUTDIR="/ix/djishnu/Priyamvada/virauto/data/epitopes/iedb/blast"
+QUERY="/ix/djishnu/Priyamvada/virauto/data/epitopes/iedb/fasta/iedb_epitopes_mhc_ii_microbial.fasta"
+DB="/ix/djishnu/Priyamvada/virauto/data/refs/blastdb/uniprot_human_sprot/uniprot_human_sprot_db"
+OUTDIR="/ix/djishnu/Priyamvada/virauto/data/epitopes/iedb/blast/mhc_ii"
 mkdir -p ${OUTDIR}
 
 OUT="${OUTDIR}/iedb_mhc_ii_vs_human_proteome.tsv"
 
 echo "============================================================"
-echo "BLAST: IEDB MHC-I epitopes vs human proteome"
+echo "BLAST: IEDB MHC-II epitopes vs human proteome"
 echo "Query: ${QUERY}"
 echo "Database: ${DB}"
 echo "Output: ${OUT}"
